@@ -1,0 +1,4 @@
+# Сборка
+*.exe
+src/app.ico
+*.pdb
