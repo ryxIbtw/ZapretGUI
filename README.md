@@ -1,5 +1,7 @@
 # Zapret GUI
 
+![Zapret GUI](docs/banner.png)
+
 Минималистичный интерфейс для [zapret-discord-youtube](https://github.com/Flowseal/zapret-discord-youtube) от **Flowseal**.
 GUI by **ryxIbtw**.
 
@@ -12,6 +14,8 @@ GUI by **ryxIbtw**.
 3. Запустите. Windows попросит права администратора: они нужны драйверу WinDivert.
 
 ## Возможности
+
+![Тёмная и светлая тема](docs/screenshots.png)
 
 **Главный экран**
 - Большая кнопка включает и выключает обход. `winws.exe` работает в фоне, консольных окон нет.

@@ -932,6 +932,7 @@ namespace ZapretGui
         {
             base.OnShown(e);
             if (snapPath == null) return;
+            if (Environment.GetEnvironmentVariable("ZAPRETGUI_SNAP_NET") == "ok") { netYt = 1; netDc = 1; UpdateUi(); }
             power.Settle();
             Form target = this;
             int delay = 400;
@@ -948,7 +949,14 @@ namespace ZapretGui
                 using (var bmp = new Bitmap(target.Width, target.Height))
                 {
                     target.DrawToBitmap(bmp, new Rectangle(0, 0, bmp.Width, bmp.Height));
-                    bmp.Save(snapPath, System.Drawing.Imaging.ImageFormat.Png);
+                    if (Environment.GetEnvironmentVariable("ZAPRETGUI_SNAP_CLIENT") == "1")
+                    {
+                        // только содержимое окна, без рамки и заголовка
+                        Point o = target.PointToScreen(Point.Empty);
+                        var r = new Rectangle(o.X - target.Left, o.Y - target.Top, target.ClientSize.Width, target.ClientSize.Height);
+                        using (var client = bmp.Clone(r, bmp.PixelFormat)) client.Save(snapPath, System.Drawing.Imaging.ImageFormat.Png);
+                    }
+                    else bmp.Save(snapPath, System.Drawing.Imaging.ImageFormat.Png);
                 }
                 exitRequested = true;
                 Close();
