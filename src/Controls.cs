@@ -12,9 +12,43 @@ namespace ZapretGui
         public static Color Bg, Surface, SurfaceHover, Line, Knob, Text, Muted, Dim, Accent, AccentDeep, Warn, Danger;
         public static Color KnobDotOff, KnobDotOn, HoverTint;
 
+        // Цвет акцента: auto — зелёный в тёмной теме и синий в светлой (как было раньше).
+        public static string AccentName = "auto";
+        public static readonly string[] Accents = { "auto", "green", "blue", "purple", "orange", "pink" };
+        // тёмная: акцент, фон под акцентом; светлая: акцент, фон под акцентом
+        static readonly System.Collections.Generic.Dictionary<string, int[]> Palette = new System.Collections.Generic.Dictionary<string, int[]>
+        {
+            { "green",  new[] { 0x34D399, 0x10291F, 0x059669, 0xD9F7EA } },
+            { "blue",   new[] { 0x60A5FA, 0x0F1E36, 0x2563EB, 0xE6EEFE } },
+            { "purple", new[] { 0xA78BFA, 0x1C1736, 0x7C3AED, 0xEFEAFE } },
+            { "orange", new[] { 0xFB923C, 0x2D1A0B, 0xEA580C, 0xFFEEDD } },
+            { "pink",   new[] { 0xF472B6, 0x2F1426, 0xDB2777, 0xFDE8F3 } },
+        };
+
+        public static string AccentLabel(string name)
+        {
+            switch (name)
+            {
+                case "green": return L.T("Зелёный", "Green");
+                case "blue": return L.T("Синий", "Blue");
+                case "purple": return L.T("Фиолетовый", "Purple");
+                case "orange": return L.T("Оранжевый", "Orange");
+                case "pink": return L.T("Розовый", "Pink");
+                default: return L.T("Авто", "Auto");
+            }
+        }
+
+        // Цвет акцента для образца в меню (с учётом текущей темы).
+        public static Color AccentSample(string name)
+        {
+            if (name == "auto") name = IsLight ? "blue" : "green";
+            if (name == "blue" && IsLight) return C(0x2563EB);
+            int[] p = Palette[name];
+            return C(IsLight ? p[2] : p[0]);
+        }
+
         static Theme() { Apply(false); }
 
-        // Тёмная тема — зелёный акцент, светлая — синий.
         public static void Apply(bool light)
         {
             IsLight = light;
@@ -32,6 +66,18 @@ namespace ZapretGui
                 Accent = C(0x34D399); AccentDeep = C(0x10291F); Warn = C(0xFBBF24); Danger = C(0xF87171);
                 KnobDotOff = C(0xB9BABF); KnobDotOn = Color.White; HoverTint = Color.White;
             }
+            int[] pal;
+            if (AccentName != "auto" && Palette.TryGetValue(AccentName, out pal))
+            {
+                Accent = C(light ? pal[2] : pal[0]);
+                AccentDeep = C(light ? pal[3] : pal[1]);
+            }
+        }
+
+        // Тема из настроек: "light", "dark" или "system" (как в Windows).
+        public static bool ResolveLight(string mode)
+        {
+            return mode == "light" || (mode != "dark" && SystemPrefersLight());
         }
 
         public static bool SystemPrefersLight()
@@ -49,12 +95,25 @@ namespace ZapretGui
 
         public static float S = 1f; // масштаб DPI
 
-        public static readonly Font Title = new Font("Segoe UI Semibold", 14f);
-        public static readonly Font Status = new Font("Segoe UI Semibold", 15f);
-        public static readonly Font Body = new Font("Segoe UI", 10f);
-        public static readonly Font BodyStrong = new Font("Segoe UI Semibold", 11f);
-        public static readonly Font Small = new Font("Segoe UI", 9f);
-        public static readonly Font Caption = new Font("Segoe UI", 8.5f);
+        // Шрифты: на Windows 11 — Segoe UI Variable, на Windows 10 — обычный Segoe UI.
+        static System.Collections.Generic.HashSet<string> families;
+        static string Family(string win11, string fallback)
+        {
+            if (families == null)
+            {
+                families = new System.Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                try { using (var fc = new System.Drawing.Text.InstalledFontCollection()) foreach (var f in fc.Families) families.Add(f.Name); } catch { }
+            }
+            return families.Contains(win11) ? win11 : fallback;
+        }
+
+        public static readonly Font Title = new Font(Family("Segoe UI Variable Display Semib", "Segoe UI Semibold"), 14f);
+        public static readonly Font Status = new Font(Family("Segoe UI Variable Display Semib", "Segoe UI Semibold"), 15f);
+        public static readonly Font Body = new Font(Family("Segoe UI Variable Text", "Segoe UI"), 10f);
+        public static readonly Font BodyStrong = new Font(Family("Segoe UI Variable Text Semibold", "Segoe UI Semibold"), 11f);
+        public static readonly Font Small = new Font(Family("Segoe UI Variable Text", "Segoe UI"), 9f);
+        public static readonly Font Caption = new Font(Family("Segoe UI Variable Small", "Segoe UI"), 8.5f);
+        public static readonly Font Badge = new Font(Family("Segoe UI Variable Text Semibold", "Segoe UI Semibold"), 8.5f);
 
         static Color C(int rgb) { return Color.FromArgb(255, (rgb >> 16) & 255, (rgb >> 8) & 255, rgb & 255); }
 
@@ -85,28 +144,46 @@ namespace ZapretGui
             using (var p = Round(r, rad)) using (var b = new SolidBrush(c)) g.FillPath(b, p);
         }
 
-        // Значок: круг с символом питания.
-        public static Bitmap Logo(int size, Color glyph, Color bg)
+        // Значок: скруглённый квадрат с градиентом и белым символом питания (как макет в Figma),
+        // dot — точка состояния в правом нижнем углу (Color.Empty — без точки).
+        public static Bitmap Logo(int size, Color top, Color bottom, Color dot)
         {
             var bmp = new Bitmap(size, size);
             using (var g = Graphics.FromImage(bmp))
             {
                 g.SmoothingMode = SmoothingMode.AntiAlias;
-                using (var b = new SolidBrush(bg)) g.FillEllipse(b, 0.5f, 0.5f, size - 1.5f, size - 1.5f);
-                float w = Math.Max(1.6f, size * 0.1f);
-                using (var pen = new Pen(glyph, w) { StartCap = LineCap.Round, EndCap = LineCap.Round })
+                g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+                float pad = size <= 16 ? 0.5f : size * 0.04f;
+                var r = new RectangleF(pad, pad, size - pad * 2, size - pad * 2);
+                using (var path = Round(r, r.Width * 0.28f))
+                using (var b = new LinearGradientBrush(new PointF(0, r.Top), new PointF(0, r.Bottom), top, bottom))
+                    g.FillPath(b, path);
+                float w = Math.Max(1.5f, size * 0.095f);
+                using (var pen = new Pen(Color.White, w) { StartCap = LineCap.Round, EndCap = LineCap.Round })
                 {
-                    float c = size / 2f, r = size * 0.24f;
-                    g.DrawArc(pen, c - r, c - r + size * 0.03f, r * 2, r * 2, -55, 290);
-                    g.DrawLine(pen, c, size * 0.2f, c, size * 0.48f);
+                    float c = size / 2f, rr = size * 0.22f;
+                    g.DrawArc(pen, c - rr, c - rr + size * 0.035f, rr * 2, rr * 2, -55, 290);
+                    g.DrawLine(pen, c, size * 0.24f, c, size * 0.47f);
+                }
+                if (dot != Color.Empty)
+                {
+                    float d = size * 0.38f, x = size - d - size * 0.01f, y = size - d - size * 0.01f;
+                    using (var ring = new SolidBrush(Color.FromArgb(255, 20, 20, 22))) g.FillEllipse(ring, x - size * 0.04f, y - size * 0.04f, d + size * 0.08f, d + size * 0.08f);
+                    using (var b = new SolidBrush(dot)) g.FillEllipse(b, x, y, d, d);
                 }
             }
             return bmp;
         }
 
-        public static Icon MakeIcon(int size, Color glyph, Color bg)
+        static Color Darker(Color c, float k) { return Color.FromArgb(c.A, (int)(c.R * k), (int)(c.G * k), (int)(c.B * k)); }
+
+        // state: 0 — выключено (серый), 1 — включено (акцент), 2 — идёт подбор/операция (акцент + жёлтая точка)
+        public static Icon MakeIcon(int size, int state)
         {
-            using (var bmp = Logo(size, glyph, bg)) return Icon.FromHandle(bmp.GetHicon());
+            Color top = state == 0 ? C(0x6B6E76) : Accent;
+            Color bottom = state == 0 ? C(0x45474E) : Darker(Accent, 0.72f);
+            Color dot = state == 2 ? C(0xFBBF24) : Color.Empty;
+            using (var bmp = Logo(size, top, bottom, dot)) return Icon.FromHandle(bmp.GetHicon());
         }
     }
 
@@ -126,7 +203,7 @@ namespace ZapretGui
     {
         public const string ZapretAuthor = "Flowseal";
         public const string Author = "ryxIbtw";
-        static readonly Font BadgeFont = new Font("Segoe UI Semibold", 8.5f);
+        static Font BadgeFont { get { return Theme.Badge; } }
         const TextFormatFlags Flags = TextFormatFlags.NoPadding | TextFormatFlags.Left | TextFormatFlags.Top;
         const float PillH = 20, PillPad = 10, Gap = 10, RowGap = 5;
 
@@ -227,9 +304,20 @@ namespace ZapretGui
         public float YouTube = -1, Discord = -1;
         public bool Checking;
         bool hover;
+        public Func<string> TooltipText;   // текст подсказки при наведении (подробности последней проверки)
+        static DarkToolTip tip;
 
         public StatusDots() { Cursor = Cursors.Hand; }
-        protected override void OnMouseEnter(EventArgs e) { hover = true; Invalidate(); base.OnMouseEnter(e); }
+        protected override void OnMouseEnter(EventArgs e)
+        {
+            hover = true; Invalidate();
+            if (TooltipText != null)
+            {
+                if (tip == null) tip = new DarkToolTip();
+                tip.SetToolTip(this, TooltipText());
+            }
+            base.OnMouseEnter(e);
+        }
         protected override void OnMouseLeave(EventArgs e) { hover = false; Invalidate(); base.OnMouseLeave(e); }
 
         static Color ColorOf(float v)
@@ -266,6 +354,28 @@ namespace ZapretGui
             };
             item(a, wa, YouTube);
             item(b, wb, Discord);
+        }
+    }
+
+    // Всплывающая подсказка в цветах программы.
+    class DarkToolTip : ToolTip
+    {
+        public DarkToolTip()
+        {
+            OwnerDraw = true;
+            InitialDelay = 350; AutoPopDelay = 15000; ReshowDelay = 100;
+            Popup += (s, e) =>
+            {
+                Size sz = TextRenderer.MeasureText(GetToolTip(e.AssociatedControl), Theme.Small);
+                e.ToolTipSize = new Size(sz.Width + Theme.P(20), sz.Height + Theme.P(14));
+            };
+            Draw += (s, e) =>
+            {
+                e.Graphics.Clear(Theme.Surface);
+                using (var pen = new Pen(Theme.Line)) e.Graphics.DrawRectangle(pen, 0, 0, e.Bounds.Width - 1, e.Bounds.Height - 1);
+                TextRenderer.DrawText(e.Graphics, e.ToolTipText, Theme.Small, new Rectangle(Theme.P(10), Theme.P(7), e.Bounds.Width, e.Bounds.Height),
+                    Theme.Text, Theme.Surface, TextFormatFlags.Left | TextFormatFlags.Top | TextFormatFlags.NoPadding);
+            };
         }
     }
 
@@ -314,8 +424,9 @@ namespace ZapretGui
     class PowerButton : PaintedControl
     {
         bool on, busy, hover, down;
-        float t, spin;
+        float t, spin, phase;
         readonly Timer tm = new Timer { Interval = 15 };
+        public bool Breathe = true;   // мягкое «дыхание» свечения, пока обход включён
 
         public PowerButton()
         {
@@ -324,13 +435,27 @@ namespace ZapretGui
             {
                 float target = on ? 1f : 0f;
                 t += (target - t) * 0.12f;
-                if (busy) spin = (spin + 7) % 360;
-                if (!busy && Math.Abs(target - t) < 0.005f) { t = target; tm.Stop(); }
+                bool settled = Math.Abs(target - t) < 0.005f;
+                if (settled) t = target;
+                var form = FindForm();
+                bool shown = Visible && form != null && form.Visible && form.WindowState != FormWindowState.Minimized;
+                if (busy) { spin = (spin + 7) % 360; tm.Interval = 15; Invalidate(); return; }
+                if (!settled) { tm.Interval = 15; Invalidate(); return; }
+                if (on && Breathe)
+                {
+                    // окно скрыто — не тратим процессор, просто изредка проверяем
+                    if (!shown) { tm.Interval = 500; return; }
+                    tm.Interval = 33;
+                    phase = (phase + 0.045f) % (float)(Math.PI * 2);
+                    Invalidate();
+                    return;
+                }
+                tm.Stop();
                 Invalidate();
             };
         }
 
-        public bool On { get { return on; } set { if (on != value) { on = value; tm.Start(); } } }
+        public bool On { get { return on; } set { if (on != value) { on = value; tm.Start(); } else if (on && Breathe && !tm.Enabled) tm.Start(); } }
         public bool Busy { get { return busy; } set { if (busy != value) { busy = value; tm.Start(); Invalidate(); } } }
         public void Settle() { t = on ? 1f : 0f; Invalidate(); }
 
@@ -348,13 +473,15 @@ namespace ZapretGui
             if (down) size -= 4 * S;
             var r = new RectangleF((Width - size) / 2f, (Height - size) / 2f, size, size);
 
-            // свечение
+            // свечение (при «дыхании» плавно меняются яркость и радиус)
             if (t > 0.01f)
             {
+                float k = Breathe && !busy ? (float)(0.5 + 0.5 * Math.Sin(phase)) : 0.5f;
+                float spread = 1.9f + 0.9f * k, bright = 0.75f + 0.45f * k;
                 for (int i = 6; i >= 1; i--)
                 {
-                    var gr = RectangleF.Inflate(r, i * 2.2f * S, i * 2.2f * S);
-                    using (var b = new SolidBrush(Color.FromArgb((int)(14 * t * (7 - i) / 6f), Theme.Accent)))
+                    var gr = RectangleF.Inflate(r, i * spread * S, i * spread * S);
+                    using (var b = new SolidBrush(Color.FromArgb(Math.Min(255, (int)(14 * t * bright * (7 - i) / 6f)), Theme.Accent)))
                         g.FillEllipse(b, gr);
                 }
             }
@@ -451,6 +578,15 @@ namespace ZapretGui
         }
     }
 
+    // Панель страницы с двойной буферизацией — чтобы плавный сдвиг страниц не мерцал.
+    class BufferedPanel : Panel
+    {
+        public BufferedPanel()
+        {
+            SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.UserPaint, true);
+        }
+    }
+
     // Подложка-карточка для строк настроек.
     class Card : PaintedControl
     {
@@ -471,7 +607,7 @@ namespace ZapretGui
         public bool Divider;
         string value = "";
         bool isChecked, hover;
-        float a;
+        float a, h;   // a — положение переключателя, h — плавная подсветка при наведении
         readonly Timer tm = new Timer { Interval = 15 };
 
         public SettingRow(string title, bool isSwitch)
@@ -481,9 +617,13 @@ namespace ZapretGui
             Cursor = Cursors.Hand;
             tm.Tick += delegate
             {
-                float target = isChecked ? 1f : 0f;
-                a += (target - a) * 0.25f;
-                if (Math.Abs(target - a) < 0.01f) { a = target; tm.Stop(); }
+                float ta = isChecked ? 1f : 0f, th = hover && Enabled ? 1f : 0f;
+                a += (ta - a) * 0.25f;
+                h += (th - h) * 0.3f;
+                bool doneA = Math.Abs(ta - a) < 0.01f, doneH = Math.Abs(th - h) < 0.02f;
+                if (doneA) a = ta;
+                if (doneH) h = th;
+                if (doneA && doneH) tm.Stop();
                 Invalidate();
             };
         }
@@ -496,8 +636,8 @@ namespace ZapretGui
 
         public string Value { get { return value; } set { if (this.value != value) { this.value = value; Invalidate(); } } }
 
-        protected override void OnMouseEnter(EventArgs e) { hover = true; Invalidate(); base.OnMouseEnter(e); }
-        protected override void OnMouseLeave(EventArgs e) { hover = false; Invalidate(); base.OnMouseLeave(e); }
+        protected override void OnMouseEnter(EventArgs e) { hover = true; tm.Start(); base.OnMouseEnter(e); }
+        protected override void OnMouseLeave(EventArgs e) { hover = false; tm.Start(); base.OnMouseLeave(e); }
 
         protected override void OnPaint(PaintEventArgs e)
         {
@@ -506,12 +646,12 @@ namespace ZapretGui
             g.SmoothingMode = SmoothingMode.AntiAlias;
             g.Clear(Theme.Surface);
             Color bg = Theme.Surface;
-            if (hover && Enabled)
+            if (h > 0.02f)
             {
-                bg = Theme.SurfaceHover;
+                bg = Theme.Lerp(Theme.Surface, Theme.SurfaceHover, h);
                 Theme.FillRound(g, bg, new RectangleF(0, 0, Width - 1, Height - 1), 10 * S);
             }
-            else if (Divider)
+            if (Divider && h < 0.5f)
             {
                 using (var pen = new Pen(Theme.Line, 1)) g.DrawLine(pen, 14 * S, 0, Width - 14 * S, 0);
             }

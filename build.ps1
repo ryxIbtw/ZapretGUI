@@ -7,20 +7,27 @@ $csc = "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
 if (-not (Test-Path $csc)) { $csc = "$env:WINDIR\Microsoft.NET\Framework\v4.0.30319\csc.exe" }
 $src = "$PSScriptRoot\src"
 
-# Иконка приложения (круг с символом питания), PNG внутри ICO
+# Иконка приложения: скруглённый квадрат с зелёным градиентом и белым символом питания
+# (та же геометрия, что в Theme.Logo и в макете «App icon» в Figma), PNG внутри ICO
 Add-Type -AssemblyName System.Drawing
 $ico = "$src\app.ico"
-$sizes = 16, 32, 48, 256
+$sizes = 16, 24, 32, 48, 64, 256
 $pngs = foreach ($s in $sizes) {
     $bmp = New-Object System.Drawing.Bitmap $s, $s
     $g = [System.Drawing.Graphics]::FromImage($bmp)
-    $g.SmoothingMode = 'AntiAlias'
-    $g.FillEllipse((New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(27, 28, 32))), 0.5, 0.5, $s - 1.5, $s - 1.5)
-    $pen = New-Object System.Drawing.Pen ([System.Drawing.Color]::FromArgb(52, 211, 153)), ([Math]::Max(1.6, $s * 0.1))
+    $g.SmoothingMode = 'AntiAlias'; $g.PixelOffsetMode = 'HighQuality'
+    $pad = if ($s -le 16) { 0.5 } else { $s * 0.04 }
+    $rw = $s - $pad * 2; $d = [Math]::Min($rw * 0.56, $rw)
+    $path = New-Object System.Drawing.Drawing2D.GraphicsPath
+    $path.AddArc($pad, $pad, $d, $d, 180, 90); $path.AddArc($pad + $rw - $d, $pad, $d, $d, 270, 90)
+    $path.AddArc($pad + $rw - $d, $pad + $rw - $d, $d, $d, 0, 90); $path.AddArc($pad, $pad + $rw - $d, $d, $d, 90, 90); $path.CloseFigure()
+    $brush = New-Object System.Drawing.Drawing2D.LinearGradientBrush ((New-Object System.Drawing.PointF 0, $pad), (New-Object System.Drawing.PointF 0, ($pad + $rw)), ([System.Drawing.Color]::FromArgb(52, 211, 153)), ([System.Drawing.Color]::FromArgb(37, 152, 110)))
+    $g.FillPath($brush, $path)
+    $pen = New-Object System.Drawing.Pen ([System.Drawing.Color]::White), ([Math]::Max(1.5, $s * 0.095))
     $pen.StartCap = 'Round'; $pen.EndCap = 'Round'
-    $c = $s / 2; $r = $s * 0.24
-    $g.DrawArc($pen, $c - $r, $c - $r + $s * 0.03, $r * 2, $r * 2, -55, 290)
-    $g.DrawLine($pen, $c, $s * 0.2, $c, $s * 0.48)
+    $c = $s / 2; $r = $s * 0.22
+    $g.DrawArc($pen, $c - $r, $c - $r + $s * 0.035, $r * 2, $r * 2, -55, 290)
+    $g.DrawLine($pen, $c, $s * 0.24, $c, $s * 0.47)
     $g.Dispose()
     $ms = New-Object System.IO.MemoryStream
     $bmp.Save($ms, [System.Drawing.Imaging.ImageFormat]::Png); $bmp.Dispose()
