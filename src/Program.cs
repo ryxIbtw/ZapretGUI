@@ -10,7 +10,8 @@ using System.Windows.Forms;
 [assembly: AssemblyCompany("ryxIbtw")]
 [assembly: AssemblyCopyright("© ryxIbtw")]
 [assembly: AssemblyDescription("Интерфейс для zapret-discord-youtube by Flowseal. GUI by ryxIbtw")]
-[assembly: AssemblyVersion("1.0.0.0")]
+[assembly: AssemblyVersion("1.0.1.0")]
+[assembly: AssemblyFileVersion("1.0.1.0")]
 
 namespace ZapretGui
 {

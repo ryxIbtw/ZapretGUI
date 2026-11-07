@@ -438,10 +438,16 @@ namespace ZapretGui
                 foreach (string f in FilesIn(Bin, "ACTIVE_*.bin")) save(Path.Combine("bin", Path.GetFileName(f)));
                 var flags = new HashSet<string>(FilesIn(Utils, "*.enabled").Select(f => Path.GetFileName(f)), StringComparer.OrdinalIgnoreCase);
 
-                // стратегии, которых больше нет в релизе
+                // стратегии, которых больше нет в релизе, не удаляем, а переносим в old-strategies\v<старая версия>
                 var newBats = new HashSet<string>(Directory.GetFiles(src, "*.bat").Select(f => Path.GetFileName(f)), StringComparer.OrdinalIgnoreCase);
+                string oldVer = LocalVersion;
+                string archive = Path.Combine(Root, "old-strategies", "v" + (oldVer == "" ? "unknown" : oldVer));
                 foreach (string f in Directory.GetFiles(Root, "general*.bat"))
-                    if (!newBats.Contains(Path.GetFileName(f))) File.Delete(f);
+                {
+                    if (newBats.Contains(Path.GetFileName(f))) continue;
+                    Directory.CreateDirectory(archive);
+                    File.Move(f, FreeName(archive, Path.GetFileName(f)));
+                }
 
                 CopyDir(src, Root);
 
@@ -451,6 +457,15 @@ namespace ZapretGui
                 ipsetCache = null;
             }
             finally { try { Directory.Delete(tmp, true); } catch { } }
+        }
+
+        // Путь в папке dir, не занятый другим файлом: «name.bat», «name (2).bat», «name (3).bat»…
+        static string FreeName(string dir, string fileName)
+        {
+            string target = Path.Combine(dir, fileName);
+            string stem = Path.GetFileNameWithoutExtension(fileName), ext = Path.GetExtension(fileName);
+            for (int n = 2; File.Exists(target); n++) target = Path.Combine(dir, stem + " (" + n + ")" + ext);
+            return target;
         }
 
         static IEnumerable<string> FilesIn(string dir, string pattern)

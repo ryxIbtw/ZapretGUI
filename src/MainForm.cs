@@ -832,8 +832,10 @@ namespace ZapretGui
                     newVersion = tag;
                     UpdateUi();
                     if (MessageBox.Show(this,
-                        L.T("Обновить zapret с v" + local + " до v" + tag + "?\n\nОбход ненадолго выключится. Ваши списки, настройки и fake-файлы сохранятся.",
-                            "Update zapret from v" + local + " to v" + tag + "?\n\nThe bypass will stop briefly. Your lists, settings and fake files are kept."),
+                        L.T("Обновить zapret с v" + local + " до v" + tag + "?\n\nОбход ненадолго выключится. Ваши списки, настройки и fake-файлы сохранятся.\n" +
+                            "Стратегии, которых нет в новой версии, будут перенесены в папку old-strategies.",
+                            "Update zapret from v" + local + " to v" + tag + "?\n\nThe bypass will stop briefly. Your lists, settings and fake files are kept.\n" +
+                            "Strategies missing from the new version will be moved to the old-strategies folder."),
                         L.T("Обновление", "Update"), MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
                     bool wasActive = Active;
                     string name = selected;
