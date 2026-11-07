@@ -557,24 +557,25 @@ namespace ZapretGui
             strategies = z.Strategies();
             if (strategies.Count == 0) { Toast(L.T("Не найдено ни одной стратегии (.bat)", "No strategies (.bat) found"), true); return; }
             var list = new List<string>(strategies);
-            int minutes = (int)Math.Ceiling(list.Count * 9 / 60.0);
+            int minutes = Math.Max(2, (int)Math.Ceiling(list.Count * 10 / 60.0));
             if (MessageBox.Show(this,
-                L.T("Программа по очереди включит стратегии (" + list.Count + " шт.) и проверит, открываются ли YouTube и Discord.\n" +
+                L.T("Программа по очереди включит все стратегии (" + list.Count + " шт.), для каждой 3 раза проверит YouTube и Discord " +
+                    "и замерит скорость. В конце покажет таблицу результатов, где можно выбрать стратегию.\n\n" +
                     "Это займёт до " + minutes + " мин., интернет может ненадолго прерываться.\n\nНачать?",
-                    "The app will try each strategy (" + list.Count + ") and check whether YouTube and Discord open.\n" +
+                    "The app will try every strategy (" + list.Count + "), check YouTube and Discord 3 times for each and measure speed. " +
+                    "At the end it shows a results table where you can pick a strategy.\n\n" +
                     "This takes up to " + minutes + " min; the connection may drop briefly.\n\nStart?"),
                 L.T("Подбор стратегии", "Find a strategy"), MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
 
             bool wasActive = Active;
             string prev = selected;
-            bool asSvc = autostart;
             busy = true; picking = true; cancelPick = false; expectRunning = false;
             busyText = L.T("Подбор…", "Testing…");
             UpdateUi();
 
             ThreadPool.QueueUserWorkItem(delegate
             {
-                string best = null; int bestScore = -1; int[] bestRes = null;
+                var results = new List<PickResult>();
                 Exception err = null;
                 try
                 {
@@ -587,51 +588,62 @@ namespace ZapretGui
                             pickName = name;
                             UpdateUi();
                         });
-                        int[] r;
-                        try { z.Start(name, false); Thread.Sleep(1500); r = NetCheck.Run(5000); }
-                        catch { continue; }
-                        int score = r[0] + r[1];
-                        if (score > bestScore) { bestScore = score; best = name; bestRes = r; }
-                        if (score == NetCheck.Max) break;
+                        var res = new PickResult { Name = name };
+                        try
+                        {
+                            z.Start(name, false);
+                            Thread.Sleep(1500);
+                            NetCheck.Measure(res, PickResult.PlannedRounds, 5000, () => cancelPick);
+                        }
+                        catch { res.Failed = true; }
+                        if (cancelPick && res.Rounds < PickResult.PlannedRounds && res.YtOk + res.DcOk > 0) break; // недопроверенную не показываем
+                        results.Add(res);
                     }
-
-                    if (!cancelPick && best != null && bestScore > 0)
-                    {
-                        int pid = z.Start(best, asSvc);
-                        Prefs.Set("RunPid", pid.ToString());
-                        Prefs.Set("RunStrategy", best);
-                    }
-                    else if (wasActive) z.Start(prev, asSvc);
-                    else z.StopAll(true);
+                    z.StopAll(false); // выбор — за пользователем, до него обход выключен
                 }
                 catch (Exception ex) { err = ex; }
 
                 Post(() =>
                 {
                     busy = false; picking = false; pickName = null;
-                    if (err != null) Toast(err.Message, true);
-                    else if (cancelPick) { Toast(L.T("Подбор отменён", "Testing cancelled")); expectRunning = wasActive; }
-                    else if (best != null && bestScore > 0)
-                    {
-                        selected = best;
-                        Prefs.Set("Strategy", best);
-                        netYt = bestRes[0] / (float)NetCheck.YouTube.Length;
-                        netDc = bestRes[1] / (float)NetCheck.Discord.Length;
-                        lastNet = DateTime.Now;
-                        expectRunning = true;
-                        Toast(bestScore == NetCheck.Max
-                            ? L.T("Готово: «" + best + "» — YouTube и Discord работают", "Done: “" + best + "” — YouTube and Discord work")
-                            : L.T("Лучший вариант: «" + best + "», но работает не всё — запустите диагностику",
-                                  "Best: “" + best + "”, but not everything works — run diagnostics"), bestScore != NetCheck.Max);
-                    }
-                    else
-                    {
-                        expectRunning = wasActive;
-                        Toast(L.T("Рабочая стратегия не найдена — запустите диагностику", "No working strategy found — run diagnostics"), true);
-                    }
                     RefreshState();
+                    if (err != null) Toast(err.Message, true);
+                    ShowPickResults(results, cancelPick, wasActive, prev);
                 });
             });
+        }
+
+        void ShowPickResults(List<PickResult> results, bool partial, bool wasActive, string prev)
+        {
+            var ranked = PickResult.Rank(results);
+            if (!ranked.Any(r => r.Works))
+            {
+                Toast(partial ? L.T("Подбор отменён", "Testing cancelled")
+                              : L.T("Рабочая стратегия не найдена — запустите диагностику", "No working strategy found — run diagnostics"), !partial);
+                RestoreAfterPick(wasActive, prev);
+                return;
+            }
+            ShowFromTray();
+            string chosen = null;
+            using (var f = new PickForm(ranked, iconApp, partial))
+                if (f.ShowDialog(this) == DialogResult.OK) chosen = f.Chosen;
+            if (chosen == null) { RestoreAfterPick(wasActive, prev); return; }
+
+            var r0 = ranked.First(r => r.Name == chosen);
+            selected = chosen;
+            Prefs.Set("Strategy", chosen);
+            netYt = r0.YtOk / (float)r0.YtMax;
+            netDc = r0.DcOk / (float)r0.DcMax;
+            lastNet = DateTime.Now;
+            Start();
+            Toast(L.T("Применена стратегия «" + chosen + "»", "Applied strategy “" + chosen + "”"));
+        }
+
+        void RestoreAfterPick(bool wasActive, string prev)
+        {
+            if (!wasActive) return;
+            selected = prev;
+            Start();
         }
 
         // ================= Меню =================
@@ -936,7 +948,21 @@ namespace ZapretGui
             power.Settle();
             Form target = this;
             int delay = 400;
-            if (Environment.GetEnvironmentVariable("ZAPRETGUI_SNAP_PAGE") == "diag")
+            if (Environment.GetEnvironmentVariable("ZAPRETGUI_SNAP_PAGE") == "pick")
+            {
+                // выдуманные результаты — только для снимка окна
+                var demo = new List<PickResult> {
+                    new PickResult { Name = "general (ALT)", YtOk = 9, DcOk = 9, Rounds = 3, Samples = 18, TotalMs = 18 * 140, SpeedKBps = 820 },
+                    new PickResult { Name = "general (SIMPLE FAKE)", YtOk = 9, DcOk = 9, Rounds = 3, Samples = 18, TotalMs = 18 * 95, SpeedKBps = 2400 },
+                    new PickResult { Name = "general (ALT2)", YtOk = 6, DcOk = 9, Rounds = 3, Samples = 15, TotalMs = 15 * 210, SpeedKBps = 400 },
+                    new PickResult { Name = "general", YtOk = 0, DcOk = 0, Rounds = 1 },
+                    new PickResult { Name = "my custom", Failed = true },
+                };
+                target = new PickForm(PickResult.Rank(demo), iconApp, false) { StartPosition = FormStartPosition.Manual, Location = Location };
+                target.Show(this);
+                delay = 800;
+            }
+            else if (Environment.GetEnvironmentVariable("ZAPRETGUI_SNAP_PAGE") == "diag")
             {
                 target = new DiagForm(z, iconApp) { StartPosition = FormStartPosition.Manual, Location = Location };
                 target.Show(this);
