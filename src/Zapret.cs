@@ -505,7 +505,7 @@ namespace ZapretGui
                 CopyDir(d, Path.Combine(dst, Path.GetFileName(d)));
         }
 
-        static string Download(string url, int timeout)
+        internal static string Download(string url, int timeout)
         {
             ServicePointManager.SecurityProtocol |= (SecurityProtocolType)3072; // TLS 1.2
             var req = (HttpWebRequest)WebRequest.Create(url);

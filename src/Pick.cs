@@ -1,9 +1,12 @@
-// Подбор стратегии: результат проверки одной стратегии и окно с таблицей результатов.
+// Подбор стратегии: результат проверки одной стратегии, история подборов и окно с таблицей результатов.
 using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.Globalization;
+using System.IO;
 using System.Linq;
+using System.Text;
 using System.Windows.Forms;
 
 namespace ZapretGui
@@ -23,6 +26,8 @@ namespace ZapretGui
         public double Ratio { get { return Failed ? -1 : (YtOk + DcOk) / (double)(PlannedRounds * NetCheck.Max); } }
         public double AvgMs { get { return Samples > 0 ? TotalMs / (double)Samples : double.MaxValue; } }
         public bool Works { get { return !Failed && YtOk + DcOk > 0; } }
+        // 2 — прошла все проверки, 1 — частично, 0 — не работала
+        public int Level { get { return Ratio >= 0.999 ? 2 : Works ? 1 : 0; } }
 
         // Сначала стабильность (доля успешных проверок), затем скорость, затем время ответа.
         public static List<PickResult> Rank(IEnumerable<PickResult> list)
@@ -41,18 +46,101 @@ namespace ZapretGui
         }
     }
 
+    // История подборов: %APPDATA%\ZapretGUI\pick-history.tsv, последние 10 полных подборов.
+    static class PickHistory
+    {
+        public class Run
+        {
+            public DateTime When;
+            public List<PickResult> Results = new List<PickResult>();
+        }
+
+        const int Keep = 10;
+        static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
+
+        internal static string PathOverride = null;   // только для проверок: другой файл вместо настоящего
+
+        static string FilePath
+        {
+            get { return PathOverride ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "ZapretGUI", "pick-history.tsv"); }
+        }
+
+        public static List<Run> Load()
+        {
+            var runs = new List<Run>();
+            try
+            {
+                if (!File.Exists(FilePath)) return runs;
+                Run cur = null; string curKey = null;
+                foreach (string line in File.ReadAllLines(FilePath, Encoding.UTF8))
+                {
+                    // дата \t стратегия \t не запустилась \t YouTube \t Discord \t раунды \t замеры \t мс \t скорость
+                    string[] p = line.Split('\t');
+                    if (p.Length < 9) continue;
+                    if (p[0] != curKey)
+                    {
+                        cur = new Run { When = DateTime.Parse(p[0], Inv, DateTimeStyles.RoundtripKind) };
+                        curKey = p[0];
+                        runs.Add(cur);
+                    }
+                    cur.Results.Add(new PickResult
+                    {
+                        Name = p[1], Failed = p[2] == "1",
+                        YtOk = int.Parse(p[3], Inv), DcOk = int.Parse(p[4], Inv), Rounds = int.Parse(p[5], Inv),
+                        Samples = int.Parse(p[6], Inv), TotalMs = long.Parse(p[7], Inv), SpeedKBps = double.Parse(p[8], Inv)
+                    });
+                }
+            }
+            catch { }
+            return runs;
+        }
+
+        // Добавляет подбор в историю; возвращает true, если сохранить удалось.
+        public static bool Save(List<PickResult> results)
+        {
+            try
+            {
+                var runs = Load();
+                runs.Add(new Run { When = DateTime.Now, Results = results });
+                if (runs.Count > Keep) runs = runs.Skip(runs.Count - Keep).ToList();
+                var sb = new StringBuilder();
+                foreach (var run in runs)
+                {
+                    string key = run.When.ToString("o", Inv);
+                    foreach (var r in run.Results)
+                        sb.Append(key).Append('\t').Append(r.Name.Replace('\t', ' ')).Append('\t').Append(r.Failed ? "1" : "0").Append('\t')
+                          .Append(r.YtOk.ToString(Inv)).Append('\t').Append(r.DcOk.ToString(Inv)).Append('\t').Append(r.Rounds.ToString(Inv)).Append('\t')
+                          .Append(r.Samples.ToString(Inv)).Append('\t').Append(r.TotalMs.ToString(Inv)).Append('\t').Append(r.SpeedKBps.ToString("0.#", Inv)).Append("\r\n");
+                }
+                Directory.CreateDirectory(Path.GetDirectoryName(FilePath));
+                File.WriteAllText(FilePath, sb.ToString(), new UTF8Encoding(false));
+                return true;
+            }
+            catch { return false; }
+        }
+
+        // Уровни стратегии в прошлых подборах (от старых к новым): 2/1/0, -1 — в том подборе её не было.
+        public static List<int> LevelsFor(string name, List<Run> past, int max)
+        {
+            return past.Skip(Math.Max(0, past.Count - max))
+                       .Select(run => { var r = run.Results.FirstOrDefault(x => x.Name == name); return r == null ? -1 : r.Level; })
+                       .ToList();
+        }
+    }
+
     // Строка таблицы результатов.
     class PickRow : PaintedControl
     {
         public readonly PickResult R;
         readonly int rank;
+        readonly List<int> past;
         bool hover;
         public bool Selected;
         public event EventHandler Picked, Applied;
 
-        public PickRow(PickResult r, int rank)
+        public PickRow(PickResult r, int rank, List<int> past)
         {
-            R = r; this.rank = rank;
+            R = r; this.rank = rank; this.past = past ?? new List<int>();
             BackColor = Theme.Bg;
             Cursor = r.Works ? Cursors.Hand : Cursors.Default;
         }
@@ -62,14 +150,19 @@ namespace ZapretGui
         protected override void OnMouseClick(MouseEventArgs e) { if (R.Works && Picked != null) Picked(this, EventArgs.Empty); }
         protected override void OnMouseDoubleClick(MouseEventArgs e) { if (R.Works && Applied != null) Applied(this, EventArgs.Empty); }
 
-        // Колонки: №, стратегия, YouTube, Discord, отклик, скорость.
-        public static readonly float[] Cols = { 12, 40, 252, 322, 392, 456 };
+        // Колонки: №, стратегия, YouTube, Discord, отклик, скорость, история.
+        public static readonly float[] Cols = { 12, 40, 250, 316, 382, 448, 540 };
 
         static Color RatioColor(int ok, int max)
         {
             if (ok >= max) return Theme.Accent;
             if (ok > 0) return Theme.Warn;
             return Theme.Danger;
+        }
+
+        public static Color LevelColor(int level)
+        {
+            return level == 2 ? Theme.Accent : level == 1 ? Theme.Warn : level == 0 ? Theme.Danger : Theme.Line;
         }
 
         protected override void OnPaint(PaintEventArgs e)
@@ -87,16 +180,26 @@ namespace ZapretGui
             var f = TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding | TextFormatFlags.EndEllipsis;
             Func<int, int, Rectangle> col = (i, w) => new Rectangle(Theme.P(Cols[i]), 0, Theme.P(w), Height);
             TextRenderer.DrawText(g, rank.ToString(), Theme.Small, col(0, 24), Theme.Dim, bg, f);
-            TextRenderer.DrawText(g, R.Name, R.Works && rank == 1 ? Theme.BodyStrong : Theme.Body, col(1, 206), R.Works ? Theme.Text : Theme.Dim, bg, f);
+            TextRenderer.DrawText(g, R.Name, R.Works && rank == 1 ? Theme.BodyStrong : Theme.Body, col(1, 204), R.Works ? Theme.Text : Theme.Dim, bg, f);
             if (R.Failed)
-            {
                 TextRenderer.DrawText(g, L.T("не запустилась", "failed to start"), Theme.Small, col(2, 200), Theme.Dim, bg, f);
-                return;
+            else
+            {
+                TextRenderer.DrawText(g, R.YtOk + "/" + R.YtMax, Theme.Body, col(2, 60), RatioColor(R.YtOk, R.YtMax), bg, f);
+                TextRenderer.DrawText(g, R.DcOk + "/" + R.DcMax, Theme.Body, col(3, 60), RatioColor(R.DcOk, R.DcMax), bg, f);
+                TextRenderer.DrawText(g, R.Samples > 0 ? ((int)R.AvgMs) + L.T(" мс", " ms") : "—", Theme.Small, col(4, 60), Theme.Muted, bg, f);
+                TextRenderer.DrawText(g, PickResult.FormatSpeed(R.SpeedKBps), Theme.Small, col(5, 84), Theme.Muted, bg, f);
             }
-            TextRenderer.DrawText(g, R.YtOk + "/" + R.YtMax, Theme.Body, col(2, 60), RatioColor(R.YtOk, R.YtMax), bg, f);
-            TextRenderer.DrawText(g, R.DcOk + "/" + R.DcMax, Theme.Body, col(3, 60), RatioColor(R.DcOk, R.DcMax), bg, f);
-            TextRenderer.DrawText(g, R.Samples > 0 ? ((int)R.AvgMs) + L.T(" мс", " ms") : "—", Theme.Small, col(4, 60), Theme.Muted, bg, f);
-            TextRenderer.DrawText(g, PickResult.FormatSpeed(R.SpeedKBps), Theme.Small, col(5, 76), Theme.Muted, bg, f);
+
+            // история: точки по прошлым подборам, от старых к новым
+            float d = 8 * S, gap = 5 * S, x = Theme.P(Cols[6]), cy = Height / 2f;
+            if (past.Count == 0)
+                TextRenderer.DrawText(g, "—", Theme.Small, col(6, 60), Theme.Dim, bg, f);
+            foreach (int lv in past)
+            {
+                using (var b = new SolidBrush(LevelColor(lv))) g.FillEllipse(b, x, cy - d / 2, d, d);
+                x += d + gap;
+            }
         }
     }
 
@@ -106,11 +209,14 @@ namespace ZapretGui
         readonly List<PickRow> rows = new List<PickRow>();
         readonly Button apply;
         readonly Label summary;
+        const int HistoryDots = 5;
 
-        public PickForm(List<PickResult> ranked, Icon icon, bool partial)
+        // history — прошлые подборы (без показанного), title — заголовок вместо стандартного.
+        public PickForm(List<PickResult> ranked, Icon icon, bool partial, List<PickHistory.Run> history, string title)
         {
             Func<float, int> P = Theme.P;
-            Text = L.T("Результаты подбора", "Strategy test results");
+            history = history ?? new List<PickHistory.Run>();
+            Text = title ?? L.T("Результаты подбора", "Strategy test results");
             Icon = icon;
             FormBorderStyle = FormBorderStyle.FixedSingle;
             MaximizeBox = false; MinimizeBox = false;
@@ -118,25 +224,28 @@ namespace ZapretGui
             StartPosition = FormStartPosition.CenterParent;
             AutoScaleMode = AutoScaleMode.None;
             BackColor = Theme.Bg; ForeColor = Theme.Text; Font = Theme.Body;
-            ClientSize = new Size(P(580), P(620));
+            ClientSize = new Size(P(680), P(620));
 
-            var title = new Label { Text = Text, Font = Theme.Title, AutoSize = true, Location = new Point(P(20), P(16)), BackColor = Theme.Bg };
-            summary = new Label { Font = Theme.Small, ForeColor = Theme.Muted, AutoSize = false, Bounds = new Rectangle(P(20), P(46), P(540), P(36)), BackColor = Theme.Bg };
+            var head1 = new Label { Text = Text, Font = Theme.Title, AutoSize = true, Location = new Point(P(20), P(16)), BackColor = Theme.Bg };
+            summary = new Label { Font = Theme.Small, ForeColor = Theme.Muted, AutoSize = false, Bounds = new Rectangle(P(20), P(46), P(640), P(36)), BackColor = Theme.Bg };
+            string hist = history.Count == 0
+                ? L.T(" История появится после следующего подбора.", " History will appear after the next test.")
+                : L.T(" «История» — прошлые подборы (до " + HistoryDots + "): зелёный — всё работало, жёлтый — частично, красный — нет.",
+                      " “History” shows past tests (up to " + HistoryDots + "): green — all worked, yellow — partly, red — not.");
             summary.Text = (partial ? L.T("Подбор прерван, показаны проверенные стратегии. ", "Testing was stopped; showing tested strategies. ") : "") +
-                L.T("Лучшая по замерам выделена. Можно выбрать другую и нажать «Применить» (или дважды щёлкнуть).",
-                    "The best by measurements is selected. Pick another and click Apply (or double-click).");
+                L.T("Лучшая по замерам выделена, можно выбрать другую и нажать «Применить».", "The best by measurements is selected; pick another and click Apply.") + hist;
 
             // заголовки колонок
-            var head = new Panel { Bounds = new Rectangle(P(20), P(88), P(540), P(20)), BackColor = Theme.Bg };
-            string[] names = { "#", L.T("Стратегия", "Strategy"), "YouTube", "Discord", L.T("Отклик", "Ping"), L.T("Скорость", "Speed") };
+            var head = new Panel { Bounds = new Rectangle(P(20), P(88), P(640), P(20)), BackColor = Theme.Bg };
+            string[] names = { "#", L.T("Стратегия", "Strategy"), "YouTube", "Discord", L.T("Отклик", "Ping"), L.T("Скорость", "Speed"), L.T("История", "History") };
             for (int i = 0; i < names.Length; i++)
                 head.Controls.Add(new Label { Text = names[i], Font = Theme.Caption, ForeColor = Theme.Dim, BackColor = Theme.Bg, AutoSize = true, Location = new Point(P(PickRow.Cols[i]), P(2)) });
 
-            var list = new Panel { Bounds = new Rectangle(P(20), P(110), P(540), P(442)), AutoScroll = true, BackColor = Theme.Bg };
+            var list = new Panel { Bounds = new Rectangle(P(20), P(110), P(640), P(442)), AutoScroll = true, BackColor = Theme.Bg };
             int y = 0, w = list.ClientSize.Width - SystemInformation.VerticalScrollBarWidth - P(2);
             for (int i = 0; i < ranked.Count; i++)
             {
-                var row = new PickRow(ranked[i], i + 1) { Bounds = new Rectangle(0, y, w, P(38)) };
+                var row = new PickRow(ranked[i], i + 1, PickHistory.LevelsFor(ranked[i].Name, history, HistoryDots)) { Bounds = new Rectangle(0, y, w, P(38)) };
                 row.Picked += delegate { Choose(row); };
                 row.Applied += delegate { Choose(row); DialogResult = DialogResult.OK; Close(); };
                 rows.Add(row);
@@ -145,15 +254,16 @@ namespace ZapretGui
             }
 
             apply = new Button { Text = L.T("Применить", "Apply"), DialogResult = DialogResult.OK, FlatStyle = FlatStyle.Flat, BackColor = Theme.Accent,
-                ForeColor = Theme.IsLight ? Color.White : Theme.Bg, Bounds = new Rectangle(P(440), P(570), P(120), P(34)) };
+                ForeColor = Theme.IsLight ? Color.White : Theme.Bg, Bounds = new Rectangle(P(540), P(570), P(120), P(34)) };
             apply.FlatAppearance.BorderSize = 0;
             var cancel = new Button { Text = L.T("Отмена", "Cancel"), DialogResult = DialogResult.Cancel, FlatStyle = FlatStyle.Flat, BackColor = Theme.Surface,
-                ForeColor = Theme.Text, Bounds = new Rectangle(P(310), P(570), P(120), P(34)) };
+                ForeColor = Theme.Text, Bounds = new Rectangle(P(410), P(570), P(120), P(34)) };
             cancel.FlatAppearance.BorderSize = 0;
-            var note = new Label { Text = L.T("«Отмена» вернёт то, что работало до подбора", "Cancel restores what was running before"), Font = Theme.Caption,
-                ForeColor = Theme.Dim, BackColor = Theme.Bg, AutoSize = false, Bounds = new Rectangle(P(20), P(570), P(280), P(34)), TextAlign = ContentAlignment.MiddleLeft };
+            var note = new Label { Text = title == null ? L.T("«Отмена» вернёт то, что работало до подбора", "Cancel restores what was running before") : "",
+                Font = Theme.Caption, ForeColor = Theme.Dim, BackColor = Theme.Bg, AutoSize = false,
+                Bounds = new Rectangle(P(20), P(570), P(380), P(34)), TextAlign = ContentAlignment.MiddleLeft };
 
-            Controls.AddRange(new Control[] { title, summary, head, list, note, cancel, apply });
+            Controls.AddRange(new Control[] { head1, summary, head, list, note, cancel, apply });
             AcceptButton = apply; CancelButton = cancel;
 
             var first = rows.FirstOrDefault(r => r.R.Works);

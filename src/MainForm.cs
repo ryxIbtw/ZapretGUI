@@ -41,7 +41,8 @@ namespace ZapretGui
         bool picking, cancelPick; string pickName;
         bool running, svc;
         string activeStrategy;
-        string newVersion;
+        string newVersion;   // новая версия zapret
+        string newGui;       // новая версия ZapretGUI
         bool settingsOpen;
         bool guiAutostart;
         bool exitRequested;
@@ -62,7 +63,9 @@ namespace ZapretGui
             L.Init();
             using (var g = CreateGraphics()) Theme.S = g.DpiX / 96f;
             Theme.Apply(Prefs.Get("Theme", Theme.SystemPrefersLight() ? "light" : "dark") == "light");
+#if TESTHOOKS
             if (snap != null) settingsOpen = Environment.GetEnvironmentVariable("ZAPRETGUI_SNAP_PAGE") == "settings";
+#endif
 
             BuildTray();
             LoadState();
@@ -207,10 +210,10 @@ namespace ZapretGui
 
             rowDiag = new SettingRow(L.T("Диагностика", "Diagnostics"), false) { Nav = true, Hint = L.T("конфликты, прокси, DNS, драйвер", "conflicts, proxy, DNS, driver") };
             rowFakes = new SettingRow(L.T("Fake-файлы", "Fake files"), false) { Hint = L.T("подмена пакетов для Discord и игр", "fake packets for Discord and games") };
-            rowUpdate = new SettingRow(L.T("Обновить zapret", "Update zapret"), false) { Nav = true };
+            rowUpdate = new SettingRow(L.T("Обновления", "Updates"), false);
             rowDiag.Click += delegate { OpenDiag(); };
             rowFakes.Click += delegate { ShowFakesMenu(); };
-            rowUpdate.Click += delegate { UpdateZapret(); };
+            rowUpdate.Click += delegate { ShowUpdatesMenu(); };
             settingsPage.Controls.Add(MakeCard(P, W, P(370), rowDiag, rowFakes, rowUpdate));
         }
 
@@ -367,8 +370,8 @@ namespace ZapretGui
             rowWatch.Checked = WatchdogOn;
             rowUpd.Checked = z.UpdatesEnabled;
             string lv = z.LocalVersion;
-            rowUpdate.Hint = L.T("установлена v", "installed v") + lv;
-            rowUpdate.Value = newVersion != null ? L.T("есть v", "new v") + newVersion : "";
+            rowUpdate.Hint = "zapret v" + lv + "  ·  ZapretGUI v" + SelfUpdate.Current.ToString(3);
+            rowUpdate.Value = (newVersion != null || newGui != null) ? L.T("есть новые", "available") : "";
             rowUpdate.Invalidate();
 
             if (newVersion != null)
@@ -615,6 +618,9 @@ namespace ZapretGui
 
         void ShowPickResults(List<PickResult> results, bool partial, bool wasActive, string prev)
         {
+            // прошлые подборы — для колонки «История»; текущий сохраняем, только если он прошёл до конца
+            var past = PickHistory.Load();
+            if (!partial && results.Count > 0) PickHistory.Save(results);
             var ranked = PickResult.Rank(results);
             if (!ranked.Any(r => r.Works))
             {
@@ -625,7 +631,7 @@ namespace ZapretGui
             }
             ShowFromTray();
             string chosen = null;
-            using (var f = new PickForm(ranked, iconApp, partial))
+            using (var f = new PickForm(ranked, iconApp, partial, past, null))
                 if (f.ShowDialog(this) == DialogResult.OK) chosen = f.Chosen;
             if (chosen == null) { RestoreAfterPick(wasActive, prev); return; }
 
@@ -637,6 +643,24 @@ namespace ZapretGui
             lastNet = DateTime.Now;
             Start();
             Toast(L.T("Применена стратегия «" + chosen + "»", "Applied strategy “" + chosen + "”"));
+        }
+
+        // Таблица последнего полного подбора без нового подбора.
+        void ShowLastPick()
+        {
+            if (busy) return;
+            var runs = PickHistory.Load();
+            if (runs.Count == 0) { Toast(L.T("Подбор ещё не запускался", "No strategy test has been run yet")); return; }
+            var last = runs[runs.Count - 1];
+            runs.RemoveAt(runs.Count - 1);
+            string chosen = null;
+            using (var f = new PickForm(PickResult.Rank(last.Results), iconApp, false, runs,
+                L.T("Прошлый подбор · ", "Last test · ") + last.When.ToString("dd.MM.yyyy HH:mm")))
+                if (f.ShowDialog(this) == DialogResult.OK) chosen = f.Chosen;
+            if (chosen == null || !z.Strategies().Contains(chosen)) return;
+            selected = chosen;
+            Prefs.Set("Strategy", chosen);
+            Start();
         }
 
         void RestoreAfterPick(bool wasActive, string prev)
@@ -777,6 +801,7 @@ namespace ZapretGui
             Menus.Add(m, L.T("Исключения (list-exclude-user)", "Exclusions (list-exclude-user)"), false, delegate { EditList("list-exclude-user.txt"); });
             Menus.Add(m, L.T("IP-исключения (ipset-exclude-user)", "IP exclusions (ipset-exclude-user)"), false, delegate { EditList("ipset-exclude-user.txt"); });
             m.Items.Add(new ToolStripSeparator());
+            Menus.Add(m, L.T("Результаты прошлого подбора", "Last strategy test results"), false, delegate { ShowLastPick(); });
             Menus.Add(m, L.T("Диагностика", "Diagnostics"), false, delegate { OpenDiag(); });
             Menus.Add(m, L.T("Классическое меню (service.bat)", "Classic menu (service.bat)"), false, delegate { OpenServiceBat(); });
             Menus.Add(m, L.T("Открыть папку zapret", "Open zapret folder"), false, delegate { Shell("explorer.exe", "\"" + z.Root + "\""); });
@@ -823,7 +848,79 @@ namespace ZapretGui
                 string remote = null;
                 try { remote = z.RemoteVersion(); } catch { }
                 if (!string.IsNullOrEmpty(remote) && remote != local) Post(() => { newVersion = remote; UpdateUi(); });
+
+                // своя версия: молча, ошибки сети не показываем
+                Version gui = null;
+                try { string url; gui = SelfUpdate.Latest(out url); } catch { }
+                if (gui != null && gui > SelfUpdate.Current)
+                    Post(() =>
+                    {
+                        newGui = gui.ToString(3);
+                        UpdateUi();
+                        Toast(L.T("Доступна ZapretGUI v" + newGui + " — Настройки → Обновления", "ZapretGUI v" + newGui + " is available — Settings → Updates"));
+                    });
             });
+        }
+
+        void ShowUpdatesMenu()
+        {
+            if (busy) return;
+            var m = Menus.Create();
+            Menus.Add(m, L.T("Обновить zapret", "Update zapret") + (newVersion != null ? "  →  v" + newVersion : "  (v" + z.LocalVersion + ")"),
+                false, delegate { UpdateZapret(); });
+            Menus.Add(m, L.T("Обновить ZapretGUI", "Update ZapretGUI") + (newGui != null ? "  →  v" + newGui : "  (v" + SelfUpdate.Current.ToString(3) + ")"),
+                false, delegate { UpdateGui(); });
+            ShowBelow(m, rowUpdate);
+        }
+
+        void UpdateGui()
+        {
+            if (busy) return;
+            hint.ForeColor = Theme.Muted;
+            hint.Text = L.T("Проверяю обновления ZapretGUI…", "Checking for ZapretGUI updates…");
+            ThreadPool.QueueUserWorkItem(delegate
+            {
+                Version latest = null; string url = null; Exception err = null;
+                try { latest = SelfUpdate.Latest(out url); } catch (Exception ex) { err = ex; }
+                Post(() =>
+                {
+                    hint.Text = "";
+                    if (err != null)
+                    {
+                        var we = err as System.Net.WebException;
+                        var resp = we == null ? null : we.Response as System.Net.HttpWebResponse;
+                        Toast(resp != null && resp.StatusCode == System.Net.HttpStatusCode.NotFound
+                            ? L.T("Релизы ZapretGUI на GitHub сейчас недоступны", "ZapretGUI releases on GitHub are not available right now")
+                            : L.T("Не удалось проверить обновления ZapretGUI: ", "ZapretGUI update check failed: ") + err.Message, true);
+                        return;
+                    }
+                    string cur = SelfUpdate.Current.ToString(3);
+                    if (latest <= SelfUpdate.Current) { newGui = null; UpdateUi(); Toast(L.T("Установлена последняя версия ZapretGUI v", "Latest ZapretGUI installed: v") + cur); return; }
+                    newGui = latest.ToString(3);
+                    UpdateUi();
+                    if (MessageBox.Show(this,
+                        L.T("Обновить ZapretGUI с v" + cur + " до v" + newGui + "?\n\nПрограмма перезапустится. Обход продолжит работать, настройки сохранятся.",
+                            "Update ZapretGUI from v" + cur + " to v" + newGui + "?\n\nThe app will restart. The bypass keeps running and settings are kept."),
+                        L.T("Обновление программы", "App update"), MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
+                    string exe = Application.ExecutablePath;
+                    RunOp(L.T("Скачиваю ZapretGUI v", "Downloading ZapretGUI v") + newGui + "…", false,
+                        () => SelfUpdate.Install(exe, SelfUpdate.DownloadBytes(url)),
+                        RestartSelf);
+                });
+            });
+        }
+
+        // Запускает новую копию программы и закрывает текущую.
+        void RestartSelf()
+        {
+            try
+            {
+                Process.Start(new ProcessStartInfo(Application.ExecutablePath,
+                    "--wait-pid " + Process.GetCurrentProcess().Id + (Visible ? "" : " --tray")) { UseShellExecute = false });
+            }
+            catch (Exception ex) { Toast(L.T("Обновление установлено, но перезапуск не удался: ", "Update installed, but restart failed: ") + ex.Message, true); return; }
+            exitRequested = true;
+            Close();
         }
 
         void UpdateZapret()
@@ -943,6 +1040,8 @@ namespace ZapretGui
         protected override void OnShown(EventArgs e)
         {
             base.OnShown(e);
+#if TESTHOOKS
+            // тестовый режим снимка окна (только в сборке build.ps1 -NoAdmin)
             if (snapPath == null) return;
             if (Environment.GetEnvironmentVariable("ZAPRETGUI_SNAP_NET") == "ok") { netYt = 1; netDc = 1; UpdateUi(); }
             power.Settle();
@@ -958,7 +1057,16 @@ namespace ZapretGui
                     new PickResult { Name = "general", YtOk = 0, DcOk = 0, Rounds = 1 },
                     new PickResult { Name = "my custom", Failed = true },
                 };
-                target = new PickForm(PickResult.Rank(demo), iconApp, false) { StartPosition = FormStartPosition.Manual, Location = Location };
+                var demoHistory = new List<PickHistory.Run> {
+                    new PickHistory.Run { When = DateTime.Now.AddDays(-2), Results = new List<PickResult> {
+                        new PickResult { Name = "general (SIMPLE FAKE)", YtOk = 9, DcOk = 9, Rounds = 3 },
+                        new PickResult { Name = "general (ALT)", YtOk = 5, DcOk = 9, Rounds = 3 } } },
+                    new PickHistory.Run { When = DateTime.Now.AddDays(-1), Results = new List<PickResult> {
+                        new PickResult { Name = "general (SIMPLE FAKE)", YtOk = 9, DcOk = 9, Rounds = 3 },
+                        new PickResult { Name = "general (ALT)", YtOk = 9, DcOk = 9, Rounds = 3 },
+                        new PickResult { Name = "general", YtOk = 0, DcOk = 0, Rounds = 1 } } },
+                };
+                target = new PickForm(PickResult.Rank(demo), iconApp, false, demoHistory, null) { StartPosition = FormStartPosition.Manual, Location = Location };
                 target.Show(this);
                 delay = 800;
             }
@@ -988,6 +1096,7 @@ namespace ZapretGui
                 Close();
             };
             t.Start();
+#endif
         }
 
         protected override void OnFormClosing(FormClosingEventArgs e)

@@ -139,6 +139,67 @@ namespace ZapretGui
         }
     }
 
+    // Самообновление ZapretGUI из релизов на GitHub.
+    static class SelfUpdate
+    {
+        const string Api = "https://api.github.com/repos/ryxIbtw/ZapretGUI/releases/latest";
+        public const string ReleasesUrl = "https://github.com/ryxIbtw/ZapretGUI/releases/latest";
+
+        public static Version Current
+        {
+            get { var v = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version; return new Version(v.Major, v.Minor, Math.Max(0, v.Build)); }
+        }
+
+        public static Version Parse(string tag)
+        {
+            var m = System.Text.RegularExpressions.Regex.Match(tag ?? "", @"(\d+)\.(\d+)(?:\.(\d+))?");
+            if (!m.Success) return new Version(0, 0, 0);
+            return new Version(int.Parse(m.Groups[1].Value), int.Parse(m.Groups[2].Value), m.Groups[3].Success ? int.Parse(m.Groups[3].Value) : 0);
+        }
+
+        // Последний релиз: номер версии и ссылка на ZapretGUI.exe. Бросает исключение, если GitHub недоступен.
+        public static Version Latest(out string exeUrl)
+        {
+            string json = Zapret.Download(Api, 10000);
+            var tag = System.Text.RegularExpressions.Regex.Match(json, "\"tag_name\"\\s*:\\s*\"([^\"]+)\"");
+            var exe = System.Text.RegularExpressions.Regex.Match(json, "\"browser_download_url\"\\s*:\\s*\"([^\"]+/ZapretGUI\\.exe)\"");
+            if (!tag.Success || !exe.Success) throw new Exception(L.T("В релизе не найден ZapretGUI.exe", "ZapretGUI.exe not found in the release"));
+            exeUrl = exe.Groups[1].Value;
+            return Parse(tag.Groups[1].Value);
+        }
+
+        public static byte[] DownloadBytes(string url)
+        {
+            ServicePointManager.SecurityProtocol |= (SecurityProtocolType)3072;
+            using (var wc = new WebClient())
+            {
+                wc.Headers["User-Agent"] = "ZapretGUI";
+                return wc.DownloadData(url);
+            }
+        }
+
+        // Кладёт новый exe на место текущего: текущий переименовывается в .old (запущенный файл переименовать можно).
+        public static void Install(string exePath, byte[] data)
+        {
+            if (data == null || data.Length < 32 * 1024 || data[0] != (byte)'M' || data[1] != (byte)'Z')
+                throw new Exception(L.T("Скачанный файл не похож на программу — обновление отменено", "The downloaded file is not a program — update cancelled"));
+            string fresh = exePath + ".new", old = exePath + ".old";
+            File.WriteAllBytes(fresh, data);
+            if (File.Exists(old)) File.Delete(old);   // остаток прошлого обновления
+            File.Move(exePath, old);
+            try { File.Move(fresh, exePath); }
+            catch { File.Move(old, exePath); throw; }
+        }
+
+        // Убирает файлы, оставшиеся от прошлого обновления.
+        public static void CleanupOld()
+        {
+            string exe = Application.ExecutablePath;
+            foreach (string f in new[] { exe + ".old", exe + ".new" })
+                try { if (File.Exists(f)) File.Delete(f); } catch { }
+        }
+    }
+
     // Запуск самой программы при входе в Windows (через планировщик — без запроса UAC).
     static class GuiAutostart
     {

@@ -10,8 +10,8 @@ using System.Windows.Forms;
 [assembly: AssemblyCompany("ryxIbtw")]
 [assembly: AssemblyCopyright("© ryxIbtw")]
 [assembly: AssemblyDescription("Интерфейс для zapret-discord-youtube by Flowseal. GUI by ryxIbtw")]
-[assembly: AssemblyVersion("1.1.0.0")]
-[assembly: AssemblyFileVersion("1.1.0.0")]
+[assembly: AssemblyVersion("1.2.0.0")]
+[assembly: AssemblyFileVersion("1.2.0.0")]
 
 namespace ZapretGui
 {
@@ -24,20 +24,34 @@ namespace ZapretGui
             Application.SetCompatibleTextRenderingDefault(false);
 
             L.Init();
-            string rootArg = null, snap = null, dump = null, dumpOut = null;
+            string rootArg = null, snap = null;
+#if TESTHOOKS
+            string dump = null, dumpOut = null;
+#endif
             bool hidden = false;
+            int waitPid = 0;
             for (int i = 0; i < args.Length; i++)
             {
                 if (args[i] == "--tray") hidden = true;
                 else if (args[i] == "--root" && i + 1 < args.Length) rootArg = args[++i];
+                else if (args[i] == "--wait-pid" && i + 1 < args.Length) int.TryParse(args[++i], out waitPid);
+#if TESTHOOKS
                 else if (args[i] == "--snap" && i + 1 < args.Length) snap = args[++i];
                 else if (args[i] == "--dump" && i + 2 < args.Length) { dump = args[++i]; dumpOut = args[++i]; }
+#endif
             }
+
+            // после самообновления: дождаться, пока старая копия закроется, и убрать её файл
+            if (waitPid > 0)
+            {
+                try { System.Diagnostics.Process.GetProcessById(waitPid).WaitForExit(15000); } catch { }
+            }
+            SelfUpdate.CleanupOld();
 
             bool first;
             using (var mutex = new Mutex(true, "ZapretGUI_SingleInstance", out first))
             {
-                if (!first && snap == null && dump == null)
+                if (!first && snap == null)
                 {
                     PostMessage((IntPtr)0xFFFF, MainForm.WM_SHOWME, IntPtr.Zero, IntPtr.Zero);
                     return 0;
@@ -47,12 +61,14 @@ namespace ZapretGui
                 if (root == null) return 1;
                 var z = new Zapret(root);
 
+#if TESTHOOKS
                 if (dump != null)
                 {
                     z.LoadGame();
                     File.WriteAllText(dumpOut, z.BuildArgs(dump));
                     return 0;
                 }
+#endif
 
                 Application.Run(new MainForm(z, snap, hidden));
             }
