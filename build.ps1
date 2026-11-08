@@ -1,6 +1,7 @@
 ﻿# Сборка ZapretGUI.exe встроенным в Windows компилятором C# (.NET Framework 4.x).
 # Запуск:  powershell -ExecutionPolicy Bypass -File build.ps1
-param([string]$Out = "$PSScriptRoot\ZapretGUI.exe", [switch]$NoAdmin)
+# -Wpf — новый интерфейс на WPF (src\wpf) вместо WinForms (src\*.cs); общая логика в src\core.
+param([string]$Out = "$PSScriptRoot\ZapretGUI.exe", [switch]$NoAdmin, [switch]$Wpf)
 
 $ErrorActionPreference = 'Stop'
 $csc = "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
@@ -50,8 +51,14 @@ $cscArgs = @('/nologo', '/target:winexe', '/optimize+', '/codepage:65001', "/out
     '/r:System.IO.Compression.dll', '/r:System.IO.Compression.FileSystem.dll')
 # -NoAdmin = тестовая сборка: без запроса прав администратора и с тестовыми режимами (--snap, --dump)
 if ($NoAdmin) { $cscArgs += '/define:TESTHOOKS' } else { $cscArgs += "/win32manifest:$src\app.manifest" }
-$cscArgs += (Get-ChildItem "$src\*.cs").FullName
-$cscArgs += (Get-ChildItem "$src\core\*.cs").FullName   # общая логика (её же использует версия на WPF)
+if ($Wpf) {
+    $fw = Split-Path $csc
+    $cscArgs += "/r:$fw\WPF\PresentationFramework.dll", "/r:$fw\WPF\PresentationCore.dll", "/r:$fw\WPF\WindowsBase.dll", "/r:$fw\System.Xaml.dll"
+    $cscArgs += (Get-ChildItem "$src\wpf\*.cs").FullName
+} else {
+    $cscArgs += (Get-ChildItem "$src\*.cs").FullName
+}
+$cscArgs += (Get-ChildItem "$src\core\*.cs").FullName   # общая логика для обеих версий интерфейса
 
 & $csc @cscArgs
 if ($LASTEXITCODE -ne 0) { throw "Сборка завершилась с ошибкой" }

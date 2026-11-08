@@ -22,8 +22,26 @@ namespace ZapretGui
             { "wrench", "M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" },
             { "layers", "M12 2l10 5-10 5L2 7z M2 17l10 5 10-5 M2 12l10 5 10-5" },
             { "download", "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4 M7 10l5 5 5-5 M12 15V3" },
+            { "chevronLeft", "M15 18l-6-6 6-6" },
+            { "chevronRight", "M9 18l6-6-6-6" },
+            { "chevronDown", "M6 9l6 6 6-6" },
+            { "power", "M12 3v8 M6.3 6.8a8 8 0 1 0 11.4 0" },
+            { "gear", "M12 9a3 3 0 1 0 0 6a3 3 0 1 0 0-6z M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" },
+            { "moon", "M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" },
+            { "sun", "M12 8a4 4 0 1 0 0 8a4 4 0 1 0 0-8z M12 2v2 M12 20v2 M4.93 4.93l1.41 1.41 M17.66 17.66l1.41 1.41 M2 12h2 M20 12h2 M6.34 17.66l-1.41 1.41 M19.07 4.93l-1.41 1.41" },
+            { "check", "M20 6L9 17l-5-5" },
+            { "x", "M18 6L6 18 M6 6l12 12" },
+            { "alert", "M12 9v4 M12 17h.01 M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" },
+            { "info", "M12 2a10 10 0 1 0 0 20a10 10 0 1 0 0-20z M12 16v-4 M12 8h.01" },
+            { "help", "M12 2a10 10 0 1 0 0 20a10 10 0 1 0 0-20z M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3 M12 17h.01" },
+            { "search", "M11 3a8 8 0 1 0 0 16a8 8 0 1 0 0-16z M21 21l-4.35-4.35" },
+            { "list", "M8 6h13 M8 12h13 M8 18h13 M3 6h.01 M3 12h.01 M3 18h.01" },
         };
         static readonly HashSet<string> Filled = new HashSet<string> { "play" };
+
+        // Для WPF: те же SVG-пути рисуются через Geometry.Parse.
+        public static string PathData(string name) { string d; return name != null && Data.TryGetValue(name, out d) ? d : null; }
+        public static bool IsFilled(string name) { return name != null && Filled.Contains(name); }
         static readonly Dictionary<string, GraphicsPath> Cache = new Dictionary<string, GraphicsPath>();
 
         // Рисует значок name в квадрате r цветом c (толщина линии — как у SVG stroke-width=2 на 24 px).
