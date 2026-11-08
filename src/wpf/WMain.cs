@@ -66,6 +66,8 @@ namespace ZapretGui
                 settingsOpen = Environment.GetEnvironmentVariable("ZAPRETGUI_SNAP_PAGE") == "settings";
                 string acc = Environment.GetEnvironmentVariable("ZAPRETGUI_SNAP_ACCENT"), th = Environment.GetEnvironmentVariable("ZAPRETGUI_SNAP_THEME");
                 string sc = Environment.GetEnvironmentVariable("ZAPRETGUI_SNAP_SCALE");
+                string lang = Environment.GetEnvironmentVariable("ZAPRETGUI_SNAP_LANG");
+                if (lang != null) L.En = lang == "en";
                 if (acc != null) Theme.AccentName = acc;
                 if (sc != null) Theme.SetScale(1f, int.Parse(sc) / 100f);
                 if (th != null) Theme.ApplyMode(th); else Theme.Apply(Theme.IsLight);
@@ -246,7 +248,7 @@ namespace ZapretGui
                 Tuple.Create<string, Action<FlatLink>>(L.T("Подобрать стратегию", "Find a strategy"), l => AutoPick()),
                 Tuple.Create<string, Action<FlatLink>>(L.T("Обновить IPSet", "Update IPSet"), l => UpdateIpset()),
                 Tuple.Create<string, Action<FlatLink>>(L.T("Ещё", "More"), l => ShowMoreMenu(l)));
-            foot.Margin = new Thickness(0, 10, 0, 0);
+            foot.Margin = new Thickness(0, 8, 0, 0);
             sp.Children.Add(foot);
             mainPage.Children.Add(sp);
         }

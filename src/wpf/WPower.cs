@@ -47,7 +47,7 @@ namespace ZapretGui
             glowHost.Children.Add(glow);
 
             // область должна вмещать пятно света целиком, иначе WPF обрежет его по краям
-            var stage = new Grid { Width = compact ? ring + 40 : size * 2.6 + 8, Height = compact ? ring : size + 46, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Top };
+            var stage = new Grid { Width = compact ? ring + 40 : size * 2.6 + 8, Height = compact ? ring : size + 38, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Top };
             if (!compact) stage.Children.Add(glowHost);
 
             ripple = new Ellipse { Width = size, Height = size, Stroke = W.Accent, StrokeThickness = 2.5, Opacity = 0, IsHitTestVisible = false,

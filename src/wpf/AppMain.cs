@@ -154,7 +154,10 @@ namespace ZapretGui
             el.UpdateLayout();
             int wpx = (int)Math.Ceiling(el.ActualWidth * (el.LayoutTransform is ScaleTransform ? ((ScaleTransform)el.LayoutTransform).ScaleX : 1));
             int hpx = (int)Math.Ceiling(el.ActualHeight * (el.LayoutTransform is ScaleTransform ? ((ScaleTransform)el.LayoutTransform).ScaleY : 1));
-            var rtb = new RenderTargetBitmap(Math.Max(1, wpx), Math.Max(1, hpx), 96, 96, PixelFormats.Pbgra32);
+            double k = 1;   // ZAPRETGUI_SNAP_DPI=2 — снимок в двойном разрешении (для картинок в README)
+            double.TryParse(Environment.GetEnvironmentVariable("ZAPRETGUI_SNAP_DPI") ?? "1", System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out k);
+            if (k < 1) k = 1;
+            var rtb = new RenderTargetBitmap(Math.Max(1, (int)(wpx * k)), Math.Max(1, (int)(hpx * k)), 96 * k, 96 * k, PixelFormats.Pbgra32);
             var dv = new DrawingVisual();
             using (var dc = dv.RenderOpen())
             {
