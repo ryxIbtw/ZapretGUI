@@ -51,6 +51,7 @@ $cscArgs = @('/nologo', '/target:winexe', '/optimize+', '/codepage:65001', "/out
 # -NoAdmin = тестовая сборка: без запроса прав администратора и с тестовыми режимами (--snap, --dump)
 if ($NoAdmin) { $cscArgs += '/define:TESTHOOKS' } else { $cscArgs += "/win32manifest:$src\app.manifest" }
 $cscArgs += (Get-ChildItem "$src\*.cs").FullName
+$cscArgs += (Get-ChildItem "$src\core\*.cs").FullName   # общая логика (её же использует версия на WPF)
 
 & $csc @cscArgs
 if ($LASTEXITCODE -ne 0) { throw "Сборка завершилась с ошибкой" }

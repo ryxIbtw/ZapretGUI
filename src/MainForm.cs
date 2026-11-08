@@ -1665,20 +1665,6 @@ namespace ZapretGui
         static extern int RegisterWindowMessage(string msg);
     }
 
-    static class Prefs
-    {
-        const string Key = @"Software\ZapretGUI";
-        public static string Get(string name, string def)
-        {
-            try { using (var k = Registry.CurrentUser.OpenSubKey(Key)) { var v = k == null ? null : k.GetValue(name) as string; return v ?? def; } }
-            catch { return def; }
-        }
-        public static void Set(string name, string value)
-        {
-            try { using (var k = Registry.CurrentUser.CreateSubKey(Key)) k.SetValue(name, value ?? ""); } catch { }
-        }
-    }
-
     // Простое окно ввода в цветах темы.
     static class InputBox
     {
