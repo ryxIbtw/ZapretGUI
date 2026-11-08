@@ -1,4 +1,5 @@
 # Сборка
 *.exe
+*.sha256
 src/app.ico
 *.pdb

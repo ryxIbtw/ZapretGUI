@@ -29,7 +29,7 @@ namespace ZapretGui
         StatusDots dots;
         StrategyPicker picker;
         SettingRow rowAuto, rowGame, rowIpset;
-        SettingRow rowLang, rowTheme, rowGuiStart, rowTray, rowWatch, rowUpd, rowDiag, rowFakes, rowUpdate;
+        SettingRow rowLang, rowTheme, rowGuiStart, rowTray, rowWatch, rowDiag, rowFakes, rowUpdate;
         GearButton gear;
         NotifyIcon tray;
         ToolStripMenuItem miToggle, miShow, miExit;
@@ -55,6 +55,7 @@ namespace ZapretGui
         readonly List<DateTime> restarts = new List<DateTime>();
         float netYt = -1, netDc = -1; bool netChecking; DateTime lastNet = DateTime.MinValue;
         long[] lastNetMs;   // время ответа каждого адреса в последней проверке (-1 — не открылся)
+        string lastNetSig;  // итог прошлой проверки — в журнал пишем только изменения
 
         public static readonly int WM_SHOWME = RegisterWindowMessage("ZapretGUI_ShowMe");
 
@@ -66,6 +67,7 @@ namespace ZapretGui
             z = zapret;
             snapPath = snap;
             startHidden = hidden && snap == null;
+            Journal.Enabled = snap == null;
             L.Init();
             using (var g = CreateGraphics()) Theme.S = g.DpiX / 96f;
             Theme.AccentName = Prefs.Get("Accent", "auto");
@@ -86,6 +88,8 @@ namespace ZapretGui
             BuildUi();
             RefreshState();
             expectRunning = running;
+            Journal.Add(L.T("Программа запущена, ZapretGUI v", "App started, ZapretGUI v") + SelfUpdate.Current.ToString(3) + ", zapret v" + z.LocalVersion +
+                (running ? L.T(" · обход уже включён: ", " · bypass already on: ") + (activeStrategy ?? "?") : L.T(" · обход выключен", " · bypass off")));
 
             poll.Tick += delegate
             {
@@ -298,14 +302,16 @@ namespace ZapretGui
             rowGuiStart = new SettingRow(L.T("Запускать программу с Windows", "Launch app with Windows"), true) { Hint = L.T("сразу свёрнутой в трей", "minimized to tray") };
             rowTray = new SettingRow(L.T("Крестик сворачивает в трей", "Close button hides to tray"), true) { Hint = L.T("закрыть полностью — через значок в трее", "quit via the tray icon") };
             rowWatch = new SettingRow(L.T("Сторож", "Watchdog"), true) { Hint = L.T("перезапускать обход, если он упал", "restart the bypass if it crashes") };
-            rowUpd = new SettingRow(L.T("Проверять обновления", "Check for updates"), true) { Hint = L.T("при запуске приложения", "on app start") };
             rowLang.Click += delegate { ShowLangMenu(); };
             rowTheme.Click += delegate { ShowThemeMenu(); };
             rowGuiStart.Click += delegate { ToggleGuiAutostart(); };
             rowTray.Click += delegate { CloseToTray = !CloseToTray; UpdateUi(); };
-            rowWatch.Click += delegate { WatchdogOn = !WatchdogOn; UpdateUi(); };
-            rowUpd.Click += delegate { z.UpdatesEnabled = !z.UpdatesEnabled; UpdateUi(); };
-            settingsPage.Controls.Add(MakeCard(P, W, P(38), rowLang, rowTheme, rowGuiStart, rowTray, rowWatch, rowUpd));
+            rowWatch.Click += delegate
+            {
+                WatchdogOn = !WatchdogOn; UpdateUi();
+                Journal.Add(WatchdogOn ? L.T("Сторож включён", "Watchdog on") : L.T("Сторож выключен", "Watchdog off"));
+            };
+            settingsPage.Controls.Add(MakeCard(P, W, P(38), rowLang, rowTheme, rowGuiStart, rowTray, rowWatch));
 
             rowDiag = new SettingRow(L.T("Диагностика", "Diagnostics"), false) { Nav = true, Hint = L.T("конфликты, прокси, DNS, драйвер", "conflicts, proxy, DNS, driver") };
             rowFakes = new SettingRow(L.T("Fake-файлы", "Fake files"), false) { Hint = L.T("подмена пакетов для Discord и игр", "fake packets for Discord and games") };
@@ -313,7 +319,22 @@ namespace ZapretGui
             rowDiag.Click += delegate { OpenDiag(); };
             rowFakes.Click += delegate { ShowFakesMenu(); };
             rowUpdate.Click += delegate { ShowUpdatesMenu(); };
-            settingsPage.Controls.Add(MakeCard(P, W, P(370), rowDiag, rowFakes, rowUpdate));
+            settingsPage.Controls.Add(MakeCard(P, W, P(318), rowDiag, rowFakes, rowUpdate));
+
+            // подвал настроек
+            var items = new List<Control>();
+            Action<string, Action> link = (text, act) => { var l = new FlatLink(text); l.Click += delegate { act(); }; items.Add(l); };
+            Func<Label> dot = () => new Label { Text = "·", AutoSize = true, Font = Theme.Small, ForeColor = Theme.Dim, BackColor = Theme.Bg };
+            link(L.T("Журнал событий", "Event log"), ShowJournal);
+            items.Add(dot());
+            Control backup = null;
+            link(L.T("Резервная копия", "Backup"), () => ShowBackupMenu(backup));
+            backup = items[items.Count - 1];
+            items.Add(dot());
+            link(L.T("О программе", "About"), ShowAbout);
+            int total = items.Sum(c => c.PreferredSize.Width);
+            int x = (W - total) / 2;
+            foreach (var c in items) { c.Location = new Point(x, P(512)); x += c.PreferredSize.Width; settingsPage.Controls.Add(c); }
         }
 
         static Card MakeCard(Func<float, int> P, int W, int y, params SettingRow[] rows)
@@ -537,7 +558,6 @@ namespace ZapretGui
             rowGuiStart.Checked = guiAutostart;
             rowTray.Checked = CloseToTray;
             rowWatch.Checked = WatchdogOn;
-            rowUpd.Checked = z.UpdatesEnabled;
             string lv = z.LocalVersion;
             rowUpdate.Hint = "zapret v" + lv + "  ·  ZapretGUI v" + SelfUpdate.Current.ToString(3);
             rowUpdate.Value = (newVersion != null || newGui != null) ? L.T("есть новые", "available") : "";
@@ -587,7 +607,11 @@ namespace ZapretGui
                 {
                     busy = false;
                     if (!spinner) hint.Text = "";
-                    if (err != null) Toast(err.Message, true);
+                    if (err != null)
+                    {
+                        Toast(err.Message, true);
+                        Journal.Add(L.T("Ошибка (", "Error (") + text.TrimEnd('…', '.') + "): " + err.Message);
+                    }
                     else if (done != null) done();
                     RefreshState();
                 });
@@ -613,13 +637,22 @@ namespace ZapretGui
                 int pid = z.Start(name, asSvc);
                 Prefs.Set("RunPid", pid.ToString());
                 Prefs.Set("RunStrategy", name);
-            }, () => { expectRunning = true; CheckNetSoon(); });
+            }, () =>
+            {
+                expectRunning = true;
+                Journal.Add(L.T("Обход включён: ", "Bypass on: ") + name + (asSvc ? L.T(" (служба)", " (service)") : ""));
+                CheckNetSoon();
+            });
         }
 
         void Stop()
         {
             expectRunning = false;
-            RunOp(L.T("Остановка…", "Stopping…"), true, () => z.StopAll(true), CheckNetSoon);
+            RunOp(L.T("Остановка…", "Stopping…"), true, () => z.StopAll(true), () =>
+            {
+                Journal.Add(L.T("Обход выключен", "Bypass off"));
+                CheckNetSoon();
+            });
         }
 
         void RestartIfActive() { if (Active) Start(); }
@@ -627,6 +660,7 @@ namespace ZapretGui
         void SelectStrategy(string name)
         {
             if (busy || name == selected) return;
+            Journal.Add(L.T("Стратегия сменена: ", "Strategy changed: ") + selected + " → " + name);
             selected = name;
             Prefs.Set("Strategy", name);
             picker.SetValue(name);
@@ -647,6 +681,7 @@ namespace ZapretGui
             autostart = !autostart;
             Prefs.Set("Autostart", autostart ? "1" : "0");
             rowAuto.Checked = autostart;
+            Journal.Add(autostart ? L.T("Автозапуск обхода с Windows включён", "Start with Windows on") : L.T("Автозапуск обхода с Windows выключен", "Start with Windows off"));
             if (Active) Start();
             else Toast(autostart ? L.T("Включите обход — он будет запускаться вместе с Windows", "Turn the bypass on — it will start with Windows")
                                  : L.T("Автозапуск выключен", "Autostart disabled"));
@@ -655,7 +690,11 @@ namespace ZapretGui
         void ToggleGuiAutostart()
         {
             bool target = !guiAutostart;
-            try { GuiAutostart.Set(target); guiAutostart = target; }
+            try
+            {
+                GuiAutostart.Set(target); guiAutostart = target;
+                Journal.Add(target ? L.T("Запуск программы с Windows включён", "Launch app with Windows on") : L.T("Запуск программы с Windows выключен", "Launch app with Windows off"));
+            }
             catch (Exception ex) { Toast(ex.Message, true); }
             UpdateUi();
         }
@@ -668,6 +707,7 @@ namespace ZapretGui
             if (!WatchdogOn)
             {
                 expectRunning = false;
+                Journal.Add(L.T("winws.exe завершился (сторож выключен, перезапуска нет)", "winws.exe exited (watchdog off, no restart)"));
                 Balloon(L.T("Обход остановился", "Bypass stopped"), L.T("winws.exe завершился", "winws.exe has exited"), ToolTipIcon.Warning);
                 return;
             }
@@ -675,11 +715,14 @@ namespace ZapretGui
             if (restarts.Count >= 3)
             {
                 expectRunning = false;
+                Journal.Add(L.T("winws.exe снова завершился — 3 перезапуска за 5 минут не помогли, сторож остановился",
+                                "winws.exe exited again — 3 restarts in 5 minutes didn't help, watchdog gave up"));
                 Balloon(L.T("Обход остановился", "Bypass stopped"),
                     L.T("Перезапуск не помог. Попробуйте другую стратегию или диагностику.", "Restarting didn't help. Try another strategy or run diagnostics."), ToolTipIcon.Error);
                 return;
             }
             restarts.Add(DateTime.Now);
+            Journal.Add(L.T("winws.exe завершился — сторож перезапускает (", "winws.exe exited — watchdog restarting (") + restarts.Count + "/3)");
             Balloon(L.T("Обход остановился", "Bypass stopped"), L.T("Перезапускаю…", "Restarting…"), ToolTipIcon.Warning);
             Start();
         }
@@ -717,6 +760,12 @@ namespace ZapretGui
                     netYt = yt / (float)NetCheck.YouTube.Length;
                     netDc = dc / (float)NetCheck.Discord.Length;
                     bool ok = netYt >= 0.99f && netDc >= 0.99f;
+                    string sig = "YouTube " + yt + "/" + NetCheck.YouTube.Length + ", Discord " + dc + "/" + NetCheck.Discord.Length;
+                    if (sig != lastNetSig)
+                    {
+                        Journal.Add(L.T("Доступность: ", "Availability: ") + sig + (running ? "" : L.T(" (обход выключен)", " (bypass off)")));
+                        lastNetSig = sig;
+                    }
                     if (running && wasOk && !ok)
                         Toast(L.T("YouTube или Discord перестал открываться — попробуйте «Подобрать стратегию»",
                                   "YouTube or Discord stopped working — try “Find a strategy”"), true);
@@ -772,6 +821,7 @@ namespace ZapretGui
             busy = true; picking = true; cancelPick = false; expectRunning = false;
             busyText = L.T("Подбор…", "Testing…");
             UpdateUi();
+            Journal.Add(L.T("Подбор стратегии начат: ", "Strategy test started: ") + list.Count + L.T(" шт.", " strategies"));
 
             ThreadPool.QueueUserWorkItem(delegate
             {
@@ -819,6 +869,11 @@ namespace ZapretGui
             var past = PickHistory.Load();
             if (!partial && results.Count > 0) PickHistory.Save(results);
             var ranked = PickResult.Rank(results);
+            var best = ranked.FirstOrDefault(r => r.Works);
+            Journal.Add((partial ? L.T("Подбор отменён", "Strategy test cancelled") : L.T("Подбор завершён", "Strategy test finished")) +
+                L.T(": проверено ", ": tested ") + results.Count +
+                (best != null ? L.T(", лучшая — ", ", best — ") + best.Name + " (YouTube " + best.YtOk + "/" + best.YtMax + ", Discord " + best.DcOk + "/" + best.DcMax + ")"
+                              : L.T(", рабочих нет", ", none worked")));
             if (!ranked.Any(r => r.Works))
             {
                 Toast(partial ? L.T("Подбор отменён", "Testing cancelled")
@@ -906,6 +961,7 @@ namespace ZapretGui
                 {
                     if (z.GameMode == md) return;
                     z.GameMode = md; z.SaveGame();
+                    Journal.Add(L.T("Игровой фильтр: ", "Game filter: ") + GameLabel(md));
                     UpdateUi();
                     RestartIfActive();
                 });
@@ -925,6 +981,7 @@ namespace ZapretGui
             tcp = tcp.Replace(" ", ""); udp = udp.Replace(" ", "");
             if (!Zapret.ValidRange(tcp) || !Zapret.ValidRange(udp)) { Toast(L.T("Неверный формат портов", "Invalid port format"), true); return; }
             z.GameTcp = tcp; z.GameUdp = udp; z.SaveGame();
+            Journal.Add(L.T("Порты игрового фильтра: TCP ", "Game filter ports: TCP ") + tcp + ", UDP " + udp);
             Toast(L.T("Порты сохранены", "Ports saved"));
             if (z.GameMode != "disabled") RestartIfActive();
         }
@@ -945,6 +1002,7 @@ namespace ZapretGui
                 {
                     try { z.SetIpset(md); }
                     catch (Exception ex) { Toast(ex.Message, true); return; }
+                    Journal.Add("IPSet: " + IpsetLabel(md));
                     UpdateUi();
                     RestartIfActive();
                 });
@@ -1026,6 +1084,7 @@ namespace ZapretGui
                 {
                     try { z.SetFake(active, name); }
                     catch (Exception ex) { Toast(ex.Message, true); return; }
+                    Journal.Add(L.T("Fake-файл ", "Fake file ") + title + ": " + name);
                     Toast(title + ": " + name);
                     RestartIfActive();
                 });
@@ -1040,6 +1099,7 @@ namespace ZapretGui
             Menus.Add(m, L.T("IP-исключения (ipset-exclude-user)", "IP exclusions (ipset-exclude-user)"), false, delegate { EditList("ipset-exclude-user.txt"); });
             m.Items.Add(new ToolStripSeparator());
             Menus.Add(m, L.T("Результаты прошлого подбора", "Last strategy test results"), false, delegate { ShowLastPick(); });
+            Menus.Add(m, L.T("Журнал событий", "Event log"), false, delegate { ShowJournal(); });
             Menus.Add(m, L.T("Диагностика", "Diagnostics"), false, delegate { OpenDiag(); });
             Menus.Add(m, L.T("Классическое меню (service.bat)", "Classic menu (service.bat)"), false, delegate { OpenServiceBat(); });
             Menus.Add(m, L.T("Открыть папку zapret", "Open zapret folder"), false, delegate { Shell("explorer.exe", "\"" + z.Root + "\""); });
@@ -1050,8 +1110,139 @@ namespace ZapretGui
         void EditList(string file)
         {
             try { z.EnsureUserLists(); } catch { }
-            Shell("notepad.exe", "\"" + Path.Combine(z.Lists, file) + "\"");
-            Toast(L.T("После сохранения списка перезапустите обход", "Restart the bypass after saving the list"));
+            string path = Path.Combine(z.Lists, file);
+            string title, desc;
+            bool ip = file.StartsWith("ipset", StringComparison.OrdinalIgnoreCase);
+            if (file == "list-general-user.txt")
+            { title = L.T("Мои домены", "My domains"); desc = L.T("Эти сайты тоже пойдут через обход  ·  lists\\", "These sites also go through the bypass  ·  lists\\") + file; }
+            else if (file == "list-exclude-user.txt")
+            { title = L.T("Исключения", "Exclusions"); desc = L.T("Эти сайты обход не трогает  ·  lists\\", "The bypass leaves these sites alone  ·  lists\\") + file; }
+            else
+            { title = L.T("IP-исключения", "IP exclusions"); desc = L.T("Эти IP-адреса обход не трогает  ·  lists\\", "The bypass leaves these IPs alone  ·  lists\\") + file; }
+
+            bool saved, notepad;
+            using (var f = new ListEditorForm(path, title, desc, ip, iconApp))
+            {
+                f.ShowDialog(this);
+                saved = f.Saved; notepad = f.OpenInNotepad;
+            }
+            if (saved) Journal.Add(L.T("Список изменён: ", "List changed: ") + file);
+            if (notepad)
+            {
+                Shell("notepad.exe", "\"" + path + "\"");
+                Toast(L.T("После сохранения списка перезапустите обход", "Restart the bypass after saving the list"));
+                return;
+            }
+            if (!saved) return;
+            if (Active && !busy && MessageBox.Show(this, L.T("Список сохранён. Перезапустить обход, чтобы изменения заработали?", "List saved. Restart the bypass to apply the changes?"),
+                    title, MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes) Start();
+            else Toast(L.T("Список сохранён", "List saved"));
+        }
+
+        // ---------- Журнал, резервная копия, «О программе» ----------
+
+        void ShowJournal()
+        {
+            using (var f = new JournalForm(iconApp, JournalHeader)) f.ShowDialog(this);
+        }
+
+        // Сведения о системе в начале скопированного журнала — чтобы тому, кто помогает, сразу было всё видно.
+        string JournalHeader()
+        {
+            string win = "Windows";
+            try
+            {
+                using (var k = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Microsoft\Windows NT\CurrentVersion"))
+                    if (k != null)
+                    {
+                        string build = k.GetValue("CurrentBuild") as string ?? "";
+                        object ubr = k.GetValue("UBR");
+                        int b; int.TryParse(build, out b);
+                        win = (b >= 22000 ? "Windows 11" : "Windows 10") + " " + (k.GetValue("DisplayVersion") as string ?? "") + " (build " + build + (ubr != null ? "." + ubr : "") + ")";
+                    }
+            }
+            catch { }
+            return "ZapretGUI v" + SelfUpdate.Current.ToString(3) + "  ·  zapret v" + z.LocalVersion + "  ·  " + win + "\r\n" +
+                L.T("Обход: ", "Bypass: ") + (running ? L.T("включён", "on") : L.T("выключен", "off")) +
+                L.T("  ·  стратегия: ", "  ·  strategy: ") + (activeStrategy ?? selected) + (svc ? L.T(" (служба)", " (service)") : "") +
+                L.T("  ·  игровой фильтр: ", "  ·  game filter: ") + GameLabel(z.GameMode) + "  ·  IPSet: " + IpsetLabel(z.IpsetMode()) +
+                L.T("  ·  сторож: ", "  ·  watchdog: ") + (WatchdogOn ? L.T("вкл", "on") : L.T("выкл", "off"));
+        }
+
+        void ShowAbout()
+        {
+            using (var f = new AboutForm(iconApp, z.LocalVersion)) f.ShowDialog(this);
+        }
+
+        void ShowBackupMenu(Control anchor)
+        {
+            if (busy) return;
+            var m = Menus.Create();
+            Menus.Add(m, L.T("Сохранить настройки в файл…", "Save settings to a file…"), false, delegate { ExportSettings(); });
+            Menus.Add(m, L.T("Загрузить настройки из файла…", "Load settings from a file…"), false, delegate { ImportSettings(); });
+            m.Show(anchor, new Point(anchor.Width / 2, 0), ToolStripDropDownDirection.AboveLeft);
+        }
+
+        void ExportSettings()
+        {
+            using (var d = new SaveFileDialog
+            {
+                Title = L.T("Сохранить настройки", "Save settings"),
+                Filter = L.T("Настройки ZapretGUI (*.zip)|*.zip", "ZapretGUI settings (*.zip)|*.zip"),
+                FileName = SettingsBackup.DefaultFileName,
+                InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
+                OverwritePrompt = true,
+            })
+            {
+                if (d.ShowDialog(this) != DialogResult.OK) return;
+                try { SettingsBackup.Export(z, d.FileName); }
+                catch (Exception ex) { Toast(L.T("Не удалось сохранить: ", "Could not save: ") + ex.Message, true); return; }
+                Journal.Add(L.T("Настройки сохранены в файл: ", "Settings saved to: ") + d.FileName);
+                Toast(L.T("Настройки сохранены: ", "Settings saved: ") + Path.GetFileName(d.FileName));
+            }
+        }
+
+        void ImportSettings()
+        {
+            string file;
+            using (var d = new OpenFileDialog
+            {
+                Title = L.T("Загрузить настройки", "Load settings"),
+                Filter = L.T("Настройки ZapretGUI (*.zip)|*.zip", "ZapretGUI settings (*.zip)|*.zip"),
+                InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
+            })
+            {
+                if (d.ShowDialog(this) != DialogResult.OK) return;
+                file = d.FileName;
+            }
+            string what;
+            try { what = SettingsBackup.Describe(file); }
+            catch (Exception ex) { Toast(ex.Message, true); return; }
+            if (MessageBox.Show(this,
+                L.T("Загрузить настройки из файла «" + Path.GetFileName(file) + "»?\n\n" + what +
+                    "\nТекущие файлы с этими настройками будут заменены. Перед этим их копия автоматически сохранится в\n" + SettingsBackup.AutoBackupDir,
+                    "Load settings from “" + Path.GetFileName(file) + "”?\n\n" + what +
+                    "\nThe current files with these settings will be replaced. A copy of them is saved first to\n" + SettingsBackup.AutoBackupDir),
+                L.T("Загрузка настроек", "Load settings"), MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
+
+            string safety;
+            try { safety = SettingsBackup.Import(z, file); }
+            catch (Exception ex) { Toast(L.T("Не удалось загрузить: ", "Could not load: ") + ex.Message, true); return; }
+            Journal.Add(L.T("Настройки загружены из файла: ", "Settings loaded from: ") + file + L.T(" (прежние сохранены в ", " (previous saved to ") + safety + ")");
+
+            // применить: язык, тема, стратегия, игровой фильтр
+            bool wasActive = Active;
+            string before = activeStrategy ?? selected;
+            L.Init();
+            Theme.AccentName = Prefs.Get("Accent", "auto");
+            Theme.Apply(Theme.ResolveLight(ThemeMode));
+            LoadState();
+            Rebuild();
+            RefreshState();
+            Toast(L.T("Настройки загружены", "Settings loaded"));
+            if (wasActive && MessageBox.Show(this, L.T("Перезапустить обход с новыми настройками?", "Restart the bypass with the new settings?") +
+                    (selected != before ? "\n\n" + L.T("Стратегия: ", "Strategy: ") + before + " → " + selected : ""),
+                    L.T("Загрузка настроек", "Load settings"), MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes) Start();
         }
 
         void OpenDiag()
@@ -1073,7 +1264,7 @@ namespace ZapretGui
         void UpdateIpset()
         {
             RunOp(L.T("Загрузка списка IPSet…", "Downloading IPSet list…"), false, z.UpdateIpset,
-                () => Toast(L.T("Список IPSet обновлён", "IPSet list updated")));
+                () => { Journal.Add(L.T("Список IPSet обновлён", "IPSet list updated")); Toast(L.T("Список IPSet обновлён", "IPSet list updated")); });
         }
 
         // ---------- Обновления ----------
@@ -1089,7 +1280,7 @@ namespace ZapretGui
 
                 // своя версия: молча, ошибки сети не показываем
                 Version gui = null;
-                try { string url; gui = SelfUpdate.Latest(out url); } catch { }
+                try { string url, sha; gui = SelfUpdate.Latest(out url, out sha); } catch { }
                 if (gui != null && gui > SelfUpdate.Current)
                     Post(() =>
                     {
@@ -1108,6 +1299,13 @@ namespace ZapretGui
                 false, delegate { UpdateZapret(); });
             Menus.Add(m, L.T("Обновить ZapretGUI", "Update ZapretGUI") + (newGui != null ? "  →  v" + newGui : "  (v" + SelfUpdate.Current.ToString(3) + ")"),
                 false, delegate { UpdateGui(); });
+            m.Items.Add(new ToolStripSeparator());
+            Menus.Add(m, L.T("Проверять обновления при запуске", "Check for updates on start"), z.UpdatesEnabled, delegate
+            {
+                try { z.UpdatesEnabled = !z.UpdatesEnabled; } catch (Exception ex) { Toast(ex.Message, true); return; }
+                Toast(z.UpdatesEnabled ? L.T("Обновления будут проверяться при запуске", "Updates will be checked on start")
+                                       : L.T("Проверка обновлений при запуске выключена", "Update check on start is off"));
+            });
             ShowBelow(m, rowUpdate);
         }
 
@@ -1118,8 +1316,8 @@ namespace ZapretGui
             hint.Text = L.T("Проверяю обновления ZapretGUI…", "Checking for ZapretGUI updates…");
             ThreadPool.QueueUserWorkItem(delegate
             {
-                Version latest = null; string url = null; Exception err = null;
-                try { latest = SelfUpdate.Latest(out url); } catch (Exception ex) { err = ex; }
+                Version latest = null; string url = null, sha = null; Exception err = null;
+                try { latest = SelfUpdate.Latest(out url, out sha); } catch (Exception ex) { err = ex; }
                 Post(() =>
                 {
                     hint.Text = "";
@@ -1142,8 +1340,13 @@ namespace ZapretGui
                         L.T("Обновление программы", "App update"), MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
                     string exe = Application.ExecutablePath;
                     RunOp(L.T("Скачиваю ZapretGUI v", "Downloading ZapretGUI v") + newGui + "…", false,
-                        () => SelfUpdate.Install(exe, SelfUpdate.DownloadBytes(url)),
-                        RestartSelf);
+                        () => SelfUpdate.DownloadAndInstall(exe, url, sha),
+                        () =>
+                        {
+                            Journal.Add(L.T("ZapretGUI обновлён: v", "ZapretGUI updated: v") + cur + " → v" + newGui +
+                                (sha != null ? L.T(" (контрольная сумма совпала)", " (checksum verified)") : L.T(" (в релизе нет контрольной суммы)", " (no checksum in the release)")));
+                            RestartSelf();
+                        });
                 });
             });
         }
@@ -1205,6 +1408,7 @@ namespace ZapretGui
                         strategies = z.Strategies();
                         if (!strategies.Contains(selected)) selected = strategies.Contains("general") ? "general" : (strategies.Count > 0 ? strategies[0] : "");
                         expectRunning = wasActive;
+                        Journal.Add(L.T("zapret обновлён: v", "zapret updated: v") + local + " → v" + z.LocalVersion);
                         Toast(L.T("zapret обновлён до v", "zapret updated to v") + z.LocalVersion);
                         CheckNetSoon();
                     });
@@ -1359,6 +1563,7 @@ namespace ZapretGui
 
         protected override void OnFormClosed(FormClosedEventArgs e)
         {
+            Journal.Add(L.T("Программа закрыта", "App closed") + (running ? L.T(" (обход продолжает работать)", " (bypass keeps running)") : ""));
             tray.Visible = false;
             tray.Dispose();
             SystemEvents.UserPreferenceChanged -= OnSystemPrefs;

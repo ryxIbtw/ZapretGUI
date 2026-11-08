@@ -54,5 +54,10 @@ $cscArgs += (Get-ChildItem "$src\*.cs").FullName
 
 & $csc @cscArgs
 if ($LASTEXITCODE -ne 0) { throw "Сборка завершилась с ошибкой" }
+
+# Контрольная сумма для релиза: ZapretGUI.exe.sha256 рядом с exe (формат как у sha256sum)
+$hash = (Get-FileHash -Algorithm SHA256 $Out).Hash.ToLowerInvariant()
+[System.IO.File]::WriteAllText("$Out.sha256", "$hash  $([System.IO.Path]::GetFileName($Out))`n")
 Write-Host "Готово: $Out"
+Write-Host "SHA256: $hash"
 

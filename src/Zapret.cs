@@ -19,7 +19,8 @@ namespace ZapretGui
     {
         public const string ServiceName = "zapret";
         const string ServiceKey = @"SYSTEM\CurrentControlSet\Services\zapret";
-        const string IpsetPlaceholder = "203.0.113.113/32";
+        public const string IpsetPlaceholder = "203.0.113.113/32";
+        public const string DomainPlaceholder = "domain.example.abc";
         const string VersionUrl = "https://raw.githubusercontent.com/Flowseal/zapret-discord-youtube/main/.service/version.txt";
         const string IpsetUrl = "https://raw.githubusercontent.com/Flowseal/zapret-discord-youtube/refs/heads/main/.service/ipset-service.txt";
         const string ReleaseApi = "https://api.github.com/repos/Flowseal/zapret-discord-youtube/releases/latest";

@@ -157,15 +157,46 @@ namespace ZapretGui
             return new Version(int.Parse(m.Groups[1].Value), int.Parse(m.Groups[2].Value), m.Groups[3].Success ? int.Parse(m.Groups[3].Value) : 0);
         }
 
-        // Последний релиз: номер версии и ссылка на ZapretGUI.exe. Бросает исключение, если GitHub недоступен.
-        public static Version Latest(out string exeUrl)
+        // Последний релиз: номер версии, ссылка на ZapretGUI.exe и на файл с его SHA256 (null, если в релизе его нет).
+        // Бросает исключение, если GitHub недоступен.
+        public static Version Latest(out string exeUrl, out string shaUrl)
         {
             string json = Zapret.Download(Api, 10000);
             var tag = System.Text.RegularExpressions.Regex.Match(json, "\"tag_name\"\\s*:\\s*\"([^\"]+)\"");
             var exe = System.Text.RegularExpressions.Regex.Match(json, "\"browser_download_url\"\\s*:\\s*\"([^\"]+/ZapretGUI\\.exe)\"");
+            var sha = System.Text.RegularExpressions.Regex.Match(json, "\"browser_download_url\"\\s*:\\s*\"([^\"]+/ZapretGUI\\.exe\\.sha256)\"");
             if (!tag.Success || !exe.Success) throw new Exception(L.T("В релизе не найден ZapretGUI.exe", "ZapretGUI.exe not found in the release"));
             exeUrl = exe.Groups[1].Value;
+            shaUrl = sha.Success ? sha.Groups[1].Value : null;
             return Parse(tag.Groups[1].Value);
+        }
+
+        // SHA256 в виде 64 шестнадцатеричных символов в нижнем регистре.
+        public static string Sha256(byte[] data)
+        {
+            using (var h = System.Security.Cryptography.SHA256.Create())
+                return BitConverter.ToString(h.ComputeHash(data)).Replace("-", "").ToLowerInvariant();
+        }
+
+        public static string FileSha256(string path)
+        {
+            try { return Sha256(File.ReadAllBytes(path)); } catch { return null; }
+        }
+
+        // Скачивает новую версию и, если в релизе есть контрольная сумма, сверяет её до установки.
+        public static void DownloadAndInstall(string exePath, string exeUrl, string shaUrl)
+        {
+            string expected = null;
+            if (shaUrl != null)
+            {
+                var m = System.Text.RegularExpressions.Regex.Match(Zapret.Download(shaUrl, 10000), "[0-9a-fA-F]{64}");
+                if (!m.Success) throw new Exception(L.T("Файл контрольной суммы в релизе повреждён — обновление отменено", "The checksum file in the release is broken — update cancelled"));
+                expected = m.Value.ToLowerInvariant();
+            }
+            byte[] data = DownloadBytes(exeUrl);
+            if (expected != null && Sha256(data) != expected)
+                throw new Exception(L.T("Контрольная сумма скачанного файла не совпала — обновление отменено", "Checksum of the downloaded file does not match — update cancelled"));
+            Install(exePath, data);
         }
 
         public static byte[] DownloadBytes(string url)
