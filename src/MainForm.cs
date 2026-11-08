@@ -26,7 +26,7 @@ namespace ZapretGui
         readonly System.Windows.Forms.Timer slide = new System.Windows.Forms.Timer { Interval = 15 };
         PowerButton power;
         Label status, sub, hint, version;
-        StatusDots dots;
+        ServiceCards cards;
         StrategyPicker picker;
         SettingRow rowAuto, rowGame, rowIpset;
         SettingRow rowLang, rowTheme, rowGuiStart, rowTray, rowWatch, rowDiag, rowFakes, rowUpdate;
@@ -44,6 +44,7 @@ namespace ZapretGui
         bool autostart;
         bool busy; string busyText = "";
         bool picking, cancelPick; string pickName;
+        float pickProgress;   // доля проверенных стратегий — для кольца вокруг кнопки
         bool running, svc;
         string activeStrategy;
         string newVersion;   // новая версия zapret
@@ -69,17 +70,19 @@ namespace ZapretGui
             startHidden = hidden && snap == null;
             Journal.Enabled = snap == null;
             L.Init();
-            using (var g = CreateGraphics()) Theme.S = g.DpiX / 96f;
+            using (var g = CreateGraphics()) Theme.SetScale(g.DpiX / 96f, UiScalePref / 100f);
             Theme.AccentName = Prefs.Get("Accent", "auto");
-            Theme.Apply(Theme.ResolveLight(ThemeMode));
+            Theme.ApplyMode(ThemeMode);
             SystemEvents.UserPreferenceChanged += OnSystemPrefs;
 #if TESTHOOKS
             if (snap != null)
             {
                 settingsOpen = Environment.GetEnvironmentVariable("ZAPRETGUI_SNAP_PAGE") == "settings";
                 string acc = Environment.GetEnvironmentVariable("ZAPRETGUI_SNAP_ACCENT"), th = Environment.GetEnvironmentVariable("ZAPRETGUI_SNAP_THEME");
+                string sc = Environment.GetEnvironmentVariable("ZAPRETGUI_SNAP_SCALE");
                 if (acc != null) Theme.AccentName = acc;
-                Theme.Apply(th != null ? th == "light" : Theme.IsLight);
+                if (sc != null) Theme.SetScale(Theme.Dpi, int.Parse(sc) / 100f);
+                if (th != null) Theme.ApplyMode(th); else Theme.Apply(Theme.IsLight);
             }
 #endif
 
@@ -113,8 +116,14 @@ namespace ZapretGui
             var h = Handle; // окно должно существовать даже при запуске в трее
         }
 
-        // "system" (как в Windows, по умолчанию), "dark" или "light"
-        static string ThemeMode { get { return Prefs.Get("Theme", "system"); } }
+        // "system" (как в Windows, по умолчанию), "dark", "light", "amoled" или "warm"
+        static string ThemeMode { get { string m = Prefs.Get("Theme", "system"); return Theme.Modes.Contains(m) ? m : "system"; } }
+
+        // Масштаб интерфейса в процентах (75, 90, 100, 110, 125).
+        static int UiScalePref
+        {
+            get { int v; return int.TryParse(Prefs.Get("Scale", "100"), out v) && Theme.Scales.Contains(v) ? v : 100; }
+        }
 
         // Тема Windows поменялась — подстроиться, если выбрано «Как в Windows».
         void OnSystemPrefs(object sender, UserPreferenceChangedEventArgs e)
@@ -125,8 +134,7 @@ namespace ZapretGui
                 if (ThemeMode != "system") return;
                 bool light = Theme.ResolveLight("system");
                 if (light == Theme.IsLight) return;
-                Theme.Apply(light);
-                Rebuild();
+                Rebuild(() => Theme.ApplyMode("system"));
             });
         }
 
@@ -162,7 +170,8 @@ namespace ZapretGui
             pageTop = Math.Max(P(60), title.Bottom + P(2));
             pageH = P(596) - pageTop;
             var themeBtn = new ThemeToggle { Bounds = new Rectangle(W - P(16) - P(30), P(16), P(30), P(30)) };
-            themeBtn.Click += delegate { SetThemeMode(Theme.IsLight ? "dark" : "light"); };
+            // быстрая смена светлая ↔ тёмная (чёрная ↔ тёплая для их любителей)
+            themeBtn.Click += delegate { SetThemeMode(Theme.IsLight ? (Theme.Flavor == "warm" ? "amoled" : "dark") : (Theme.Flavor == "amoled" ? "warm" : "light")); };
             gear = new GearButton { Bounds = new Rectangle(themeBtn.Left - P(4) - P(30), P(16), P(30), P(30)), Back = settingsOpen };
             gear.Click += delegate
             {
@@ -183,6 +192,7 @@ namespace ZapretGui
             BuildSettingsPage(P, W);
             BuildWelcomePage(P, W);
             ShowPage(false);
+            power.Settle();   // новая кнопка сразу в текущем состоянии: без волны и без проявления света при пересборке
             ResumeLayout();
         }
 
@@ -251,15 +261,18 @@ namespace ZapretGui
             mainPage = new BufferedPanel { Bounds = new Rectangle(0, pageTop, W, pageH), BackColor = Theme.Bg };
             Controls.Add(mainPage);
 
-            power = new PowerButton { Bounds = new Rectangle((W - P(168)) / 2, P(4), P(168), P(168)) };
+            // кнопка вместе с подписями и светом за ней — один элемент (свет ложится и под текст)
+            power = new PowerButton { Bounds = new Rectangle(0, 0, W, P(208)), Hero = true, CircleSize = P(120), CircleCenterY = P(80) };
             power.Click += delegate { TogglePower(); };
-            status = new Label { Font = Theme.Status, BackColor = Theme.Bg, TextAlign = ContentAlignment.MiddleCenter, AutoSize = false, Bounds = new Rectangle(0, P(172), W, P(32)) };
-            sub = new Label { Font = Theme.Small, ForeColor = Theme.Muted, BackColor = Theme.Bg, TextAlign = ContentAlignment.MiddleCenter, AutoSize = false,
-                Bounds = new Rectangle(P(20), P(204), W - P(40), P(20)), AutoEllipsis = true };
-            dots = new StatusDots { Bounds = new Rectangle(P(60), P(226), W - P(120), P(22)), TooltipText = NetTooltip };
-            dots.Click += delegate { CheckNet(); };
+            // status/sub хранят текст состояния (его же показывает мини-панель), на экран выводит power
+            if (status != null) status.Dispose();
+            if (sub != null) sub.Dispose();
+            status = new Label();
+            sub = new Label();
+            cards = new ServiceCards { Bounds = new Rectangle(P(20), P(212), W - P(40), P(50)), TooltipText = NetTooltip };
+            cards.Click += delegate { CheckNet(); };
 
-            picker = new StrategyPicker { Bounds = new Rectangle(P(20), P(258), W - P(40), P(66)) };
+            picker = new StrategyPicker { Bounds = new Rectangle(P(20), P(270), W - P(40), P(62)) };
             picker.Prev += delegate { StepStrategy(-1); };
             picker.Next += delegate { StepStrategy(1); };
             picker.Open += delegate { ShowStrategyMenu(picker); };
@@ -270,9 +283,9 @@ namespace ZapretGui
             rowAuto.Click += delegate { ToggleAutostart(); };
             rowGame.Click += delegate { ShowGameMenu(); };
             rowIpset.Click += delegate { ShowIpsetMenu(); };
-            var card = MakeCard(P, W, P(336), rowAuto, rowGame, rowIpset);
+            var card = MakeCard(P, W, P(340), P(52), rowAuto, rowGame, rowIpset);
 
-            mainPage.Controls.AddRange(new Control[] { power, status, sub, dots, picker, card });
+            mainPage.Controls.AddRange(new Control[] { power, cards, picker, card });
 
             // подвал
             var items = new List<Control>();
@@ -294,14 +307,18 @@ namespace ZapretGui
         {
             settingsPage = new BufferedPanel { Bounds = new Rectangle(0, pageTop, W, pageH), BackColor = Theme.Bg };
             Controls.Add(settingsPage);
-            var head = new Label { Text = L.T("Настройки", "Settings"), Font = Theme.BodyStrong, ForeColor = Theme.Text, BackColor = Theme.Bg, AutoSize = true, Location = new Point(P(22), P(8)) };
-            settingsPage.Controls.Add(head);
+            // заголовки групп, как в Параметрах Windows 11
+            Action<string, int> group = (text, y) => settingsPage.Controls.Add(new Label
+            {
+                Text = text.ToUpper(), Font = Theme.Badge, ForeColor = Theme.Muted, BackColor = Theme.Bg, AutoSize = true, Location = new Point(P(26), y)
+            });
+            int rh = P(48);
 
-            rowLang = new SettingRow(L.T("Язык", "Language"), false);
-            rowTheme = new SettingRow(L.T("Оформление", "Appearance"), false);
-            rowGuiStart = new SettingRow(L.T("Запускать программу с Windows", "Launch app with Windows"), true) { Hint = L.T("сразу свёрнутой в трей", "minimized to tray") };
-            rowTray = new SettingRow(L.T("Крестик сворачивает в трей", "Close button hides to tray"), true) { Hint = L.T("закрыть полностью — через значок в трее", "quit via the tray icon") };
-            rowWatch = new SettingRow(L.T("Сторож", "Watchdog"), true) { Hint = L.T("перезапускать обход, если он упал", "restart the bypass if it crashes") };
+            rowLang = new SettingRow(L.T("Язык", "Language"), false) { Icon = "globe" };
+            rowTheme = new SettingRow(L.T("Оформление", "Appearance"), false) { Icon = "palette" };
+            rowGuiStart = new SettingRow(L.T("Запускать программу с Windows", "Launch app with Windows"), true) { Icon = "monitor", Hint = L.T("сразу свёрнутой в трей", "minimized to tray") };
+            rowTray = new SettingRow(L.T("Крестик сворачивает в трей", "Close button hides to tray"), true) { Icon = "tray", Hint = L.T("закрыть полностью — через значок в трее", "quit via the tray icon") };
+            rowWatch = new SettingRow(L.T("Сторож", "Watchdog"), true) { Icon = "shield", Hint = L.T("перезапускать обход, если он упал", "restart the bypass if it crashes") };
             rowLang.Click += delegate { ShowLangMenu(); };
             rowTheme.Click += delegate { ShowThemeMenu(); };
             rowGuiStart.Click += delegate { ToggleGuiAutostart(); };
@@ -311,15 +328,19 @@ namespace ZapretGui
                 WatchdogOn = !WatchdogOn; UpdateUi();
                 Journal.Add(WatchdogOn ? L.T("Сторож включён", "Watchdog on") : L.T("Сторож выключен", "Watchdog off"));
             };
-            settingsPage.Controls.Add(MakeCard(P, W, P(38), rowLang, rowTheme, rowGuiStart, rowTray, rowWatch));
-
-            rowDiag = new SettingRow(L.T("Диагностика", "Diagnostics"), false) { Nav = true, Hint = L.T("конфликты, прокси, DNS, драйвер", "conflicts, proxy, DNS, driver") };
-            rowFakes = new SettingRow(L.T("Fake-файлы", "Fake files"), false) { Hint = L.T("подмена пакетов для Discord и игр", "fake packets for Discord and games") };
-            rowUpdate = new SettingRow(L.T("Обновления", "Updates"), false);
+            rowDiag = new SettingRow(L.T("Диагностика", "Diagnostics"), false) { Icon = "wrench", Nav = true, Hint = L.T("конфликты, прокси, DNS, драйвер", "conflicts, proxy, DNS, driver") };
+            rowFakes = new SettingRow(L.T("Fake-файлы", "Fake files"), false) { Icon = "layers", Hint = L.T("подмена пакетов для Discord и игр", "fake packets for Discord and games") };
+            rowUpdate = new SettingRow(L.T("Обновления", "Updates"), false) { Icon = "download" };
             rowDiag.Click += delegate { OpenDiag(); };
             rowFakes.Click += delegate { ShowFakesMenu(); };
             rowUpdate.Click += delegate { ShowUpdatesMenu(); };
-            settingsPage.Controls.Add(MakeCard(P, W, P(318), rowDiag, rowFakes, rowUpdate));
+
+            group(L.T("Основное", "General"), P(4));
+            settingsPage.Controls.Add(MakeCard(P, W, P(24), rh, rowLang, rowTheme, rowGuiStart, rowTray));
+            group(L.T("Обход", "Bypass"), P(236));
+            settingsPage.Controls.Add(MakeCard(P, W, P(256), rh, rowWatch, rowFakes));
+            group(L.T("Обслуживание", "Maintenance"), P(372));
+            settingsPage.Controls.Add(MakeCard(P, W, P(392), rh, rowDiag, rowUpdate));
 
             // подвал настроек
             var items = new List<Control>();
@@ -337,12 +358,12 @@ namespace ZapretGui
             foreach (var c in items) { c.Location = new Point(x, P(512)); x += c.PreferredSize.Width; settingsPage.Controls.Add(c); }
         }
 
-        static Card MakeCard(Func<float, int> P, int W, int y, params SettingRow[] rows)
+        static Card MakeCard(Func<float, int> P, int W, int y, int rowH, params SettingRow[] rows)
         {
-            var card = new Card { Bounds = new Rectangle(P(20), y, W - P(40), rows.Length * P(52) + P(8)) };
+            var card = new Card { Bounds = new Rectangle(P(20), y, W - P(40), rows.Length * rowH + P(8)) };
             for (int i = 0; i < rows.Length; i++)
             {
-                rows[i].Bounds = new Rectangle(P(4), P(4) + i * P(52), card.Width - P(8), P(52));
+                rows[i].Bounds = new Rectangle(P(4), P(4) + i * rowH, card.Width - P(8), rowH);
                 rows[i].Divider = i > 0;
                 card.Controls.Add(rows[i]);
             }
@@ -427,6 +448,7 @@ namespace ZapretGui
             if (flyout == null || flyout.IsDisposed || status == null) return;
             flyout.Power.On = running;
             flyout.Power.Busy = busy;
+            flyout.Power.Progress = picking ? pickProgress : -1;
             flyout.Status.Text = status.Text; flyout.Status.ForeColor = status.ForeColor;
             flyout.Sub.Text = sub.Text;
             flyout.Dots.YouTube = netYt; flyout.Dots.Discord = netDc; flyout.Dots.Checking = netChecking;
@@ -445,38 +467,58 @@ namespace ZapretGui
             Icon = iconApp;
         }
 
-        void Rebuild()
+        // Пересобирает окно (новые цвета, язык, масштаб). change — что поменять перед пересборкой.
+        // Пока окно пересобирается, его перерисовка выключена: новое оформление появляется сразу целиком,
+        // без мелькания недорисованных кусков.
+        void Rebuild(Action change = null)
         {
-            if (flyout != null && !flyout.IsDisposed) flyout.Close();   // пересоздастся в новых цветах при следующем клике
-            BuildUi();
-            ApplyTitleBar(Handle);
-            UpdateUi();
+            bool hold = IsHandleCreated && Visible && WindowState != FormWindowState.Minimized;
+            if (hold) SendMessage(Handle, WM_SETREDRAW, IntPtr.Zero, IntPtr.Zero);
+            try
+            {
+                if (change != null) change();
+                if (flyout != null && !flyout.IsDisposed) flyout.Close();   // пересоздастся в новых цветах при следующем клике
+                BuildUi();
+                ApplyTitleBar(Handle);
+                UpdateUi();
+            }
+            finally
+            {
+                if (hold) { SendMessage(Handle, WM_SETREDRAW, (IntPtr)1, IntPtr.Zero); Refresh(); }
+            }
         }
+
+        const int WM_SETREDRAW = 0x000B;
+
+        [DllImport("user32.dll")]
+        static extern IntPtr SendMessage(IntPtr hwnd, int msg, IntPtr w, IntPtr l);
 
         void SetThemeMode(string mode)
         {
+            if (mode == ThemeMode) return;
             Prefs.Set("Theme", mode);
-            bool light = Theme.ResolveLight(mode);
-            if (light == Theme.IsLight) { UpdateUi(); return; }
-            Theme.Apply(light);
-            Post(Rebuild);
+            Post(() => Rebuild(() => Theme.ApplyMode(mode)));
         }
 
         void SetAccent(string name)
         {
             if (name == Theme.AccentName) return;
-            Theme.AccentName = name;
             Prefs.Set("Accent", name);
-            Theme.Apply(Theme.IsLight);
-            Post(Rebuild);
+            Post(() => Rebuild(() => { Theme.AccentName = name; Theme.Apply(Theme.IsLight); }));
+        }
+
+        void SetScale(int percent)
+        {
+            if (percent == UiScalePref) return;
+            Prefs.Set("Scale", percent.ToString());
+            Post(() => Rebuild(() => Theme.SetScale(Theme.Dpi, percent / 100f)));
         }
 
         void SetLang(bool en)
         {
             if (en == L.En) return;
-            L.En = en;
             Prefs.Set("Lang", en ? "en" : "ru");
-            Post(Rebuild);
+            Post(() => Rebuild(() => { L.En = en; }));
         }
 
         // ================= Состояние =================
@@ -546,15 +588,20 @@ namespace ZapretGui
                 sub.Text = L.T("нажмите, чтобы включить", "click to turn on");
             }
 
-            dots.YouTube = netYt; dots.Discord = netDc; dots.Checking = netChecking;
-            dots.Invalidate();
+            power.SetText(status.Text, status.ForeColor, sub.Text);
+            power.Progress = picking ? pickProgress : -1;
+            cards.YouTube = netYt; cards.Discord = netDc; cards.Checking = netChecking;
+            cards.YouTubeMeta = NetMeta(0, NetCheck.YouTube.Length);
+            cards.DiscordMeta = NetMeta(NetCheck.YouTube.Length, NetCheck.Discord.Length);
+            cards.Invalidate();
             picker.SetValue(selected);
             rowAuto.Checked = autostart;
             rowGame.Value = GameLabel(z.GameMode);
             rowIpset.Value = IpsetLabel(z.IpsetMode());
 
             rowLang.Value = L.En ? "English" : "Русский";
-            rowTheme.Value = ThemeLabel(ThemeMode) + "  ·  " + Theme.AccentLabel(Theme.AccentName);
+            rowTheme.Value = ThemeLabel(ThemeMode);
+            rowTheme.Hint = L.T("цвет: ", "color: ") + Theme.AccentLabel(Theme.AccentName).ToLower() + L.T("  ·  масштаб ", "  ·  scale ") + UiScalePref + "%";
             rowGuiStart.Checked = guiAutostart;
             rowTray.Checked = CloseToTray;
             rowWatch.Checked = WatchdogOn;
@@ -774,6 +821,20 @@ namespace ZapretGui
             });
         }
 
+        // Подпись на плашке: «3/3 · 124 мс» (среднее время по открывшимся адресам).
+        string NetMeta(int offset, int count)
+        {
+            float v = offset == 0 ? netYt : netDc;
+            if (v < 0) return "";
+            int ok = (int)Math.Round(v * count);
+            string s = ok + "/" + count;
+            if (lastNetMs == null) return s;
+            long sum = 0; int n = 0;
+            for (int i = offset; i < offset + count && i < lastNetMs.Length; i++) if (lastNetMs[i] >= 0) { sum += lastNetMs[i]; n++; }
+            if (n == 0) return s + L.T(" · не открывается", " · unreachable");
+            return s + " · " + (sum / n) + L.T(" мс", " ms");
+        }
+
         // Подсказка на индикаторах: какие адреса открылись и когда была проверка.
         string NetTooltip()
         {
@@ -807,7 +868,7 @@ namespace ZapretGui
             if (strategies.Count == 0) { Toast(L.T("Не найдено ни одной стратегии (.bat)", "No strategies (.bat) found"), true); return; }
             var list = new List<string>(strategies);
             int minutes = Math.Max(2, (int)Math.Ceiling(list.Count * 10 / 60.0));
-            if (MessageBox.Show(this,
+            if (Ask.Show(this,
                 L.T("Программа по очереди включит все стратегии (" + list.Count + " шт.), для каждой 3 раза проверит YouTube и Discord " +
                     "и замерит скорость. В конце покажет таблицу результатов, где можно выбрать стратегию.\n\n" +
                     "Это займёт до " + minutes + " мин., интернет может ненадолго прерываться.\n\nНачать?",
@@ -818,7 +879,7 @@ namespace ZapretGui
 
             bool wasActive = Active;
             string prev = selected;
-            busy = true; picking = true; cancelPick = false; expectRunning = false;
+            busy = true; picking = true; cancelPick = false; expectRunning = false; pickProgress = 0;
             busyText = L.T("Подбор…", "Testing…");
             UpdateUi();
             Journal.Add(L.T("Подбор стратегии начат: ", "Strategy test started: ") + list.Count + L.T(" шт.", " strategies"));
@@ -836,6 +897,7 @@ namespace ZapretGui
                         {
                             if (!cancelPick) busyText = L.T("Подбор ", "Testing ") + (idx + 1) + " / " + list.Count;
                             pickName = name;
+                            pickProgress = idx / (float)list.Count;
                             UpdateUi();
                         });
                         var res = new PickResult { Name = name };
@@ -1020,7 +1082,14 @@ namespace ZapretGui
 
         static string ThemeLabel(string mode)
         {
-            return mode == "light" ? L.T("Светлая", "Light") : mode == "dark" ? L.T("Тёмная", "Dark") : L.T("Как в Windows", "Like Windows");
+            switch (mode)
+            {
+                case "light": return L.T("Светлая", "Light");
+                case "dark": return L.T("Тёмная", "Dark");
+                case "amoled": return L.T("Чёрная (AMOLED)", "Black (AMOLED)");
+                case "warm": return L.T("Тёплая светлая", "Warm light");
+                default: return L.T("Как в Windows", "Like Windows");
+            }
         }
 
         // Меню «Оформление»: тема и цвет акцента (с цветными кружками).
@@ -1030,7 +1099,7 @@ namespace ZapretGui
             m.ShowImageMargin = true;
             string mode = ThemeMode;
             var h1 = Menus.Add(m, L.T("Тема", "Theme"), false, null); h1.Enabled = false;
-            foreach (string md in new[] { "system", "dark", "light" })
+            foreach (string md in Theme.Modes)
             {
                 string x = md;
                 Menus.Add(m, ThemeLabel(x), mode == x, delegate { SetThemeMode(x); });
@@ -1055,6 +1124,14 @@ namespace ZapretGui
                     else using (var b = new SolidBrush(Theme.AccentSample(x))) g.FillEllipse(b, 0, 0, d - 1, d - 1);
                 }
                 it.Image = bmp;
+            }
+            m.Items.Add(new ToolStripSeparator());
+            var h3 = Menus.Add(m, L.T("Масштаб", "Scale"), false, null); h3.Enabled = false;
+            int cur = UiScalePref;
+            foreach (int sc in Theme.Scales)
+            {
+                int x = sc;
+                Menus.Add(m, x + "%", cur == x, delegate { SetScale(x); });
             }
             ShowBelow(m, rowTheme);
         }
@@ -1134,7 +1211,7 @@ namespace ZapretGui
                 return;
             }
             if (!saved) return;
-            if (Active && !busy && MessageBox.Show(this, L.T("Список сохранён. Перезапустить обход, чтобы изменения заработали?", "List saved. Restart the bypass to apply the changes?"),
+            if (Active && !busy && Ask.Show(this, L.T("Список сохранён. Перезапустить обход, чтобы изменения заработали?", "List saved. Restart the bypass to apply the changes?"),
                     title, MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes) Start();
             else Toast(L.T("Список сохранён", "List saved"));
         }
@@ -1218,7 +1295,7 @@ namespace ZapretGui
             string what;
             try { what = SettingsBackup.Describe(file); }
             catch (Exception ex) { Toast(ex.Message, true); return; }
-            if (MessageBox.Show(this,
+            if (Ask.Show(this,
                 L.T("Загрузить настройки из файла «" + Path.GetFileName(file) + "»?\n\n" + what +
                     "\nТекущие файлы с этими настройками будут заменены. Перед этим их копия автоматически сохранится в\n" + SettingsBackup.AutoBackupDir,
                     "Load settings from “" + Path.GetFileName(file) + "”?\n\n" + what +
@@ -1233,14 +1310,17 @@ namespace ZapretGui
             // применить: язык, тема, стратегия, игровой фильтр
             bool wasActive = Active;
             string before = activeStrategy ?? selected;
-            L.Init();
-            Theme.AccentName = Prefs.Get("Accent", "auto");
-            Theme.Apply(Theme.ResolveLight(ThemeMode));
             LoadState();
-            Rebuild();
+            Rebuild(() =>
+            {
+                L.Init();
+                Theme.AccentName = Prefs.Get("Accent", "auto");
+                Theme.SetScale(Theme.Dpi, UiScalePref / 100f);
+                Theme.ApplyMode(ThemeMode);
+            });
             RefreshState();
             Toast(L.T("Настройки загружены", "Settings loaded"));
-            if (wasActive && MessageBox.Show(this, L.T("Перезапустить обход с новыми настройками?", "Restart the bypass with the new settings?") +
+            if (wasActive && Ask.Show(this, L.T("Перезапустить обход с новыми настройками?", "Restart the bypass with the new settings?") +
                     (selected != before ? "\n\n" + L.T("Стратегия: ", "Strategy: ") + before + " → " + selected : ""),
                     L.T("Загрузка настроек", "Load settings"), MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes) Start();
         }
@@ -1334,7 +1414,7 @@ namespace ZapretGui
                     if (latest <= SelfUpdate.Current) { newGui = null; UpdateUi(); Toast(L.T("Установлена последняя версия ZapretGUI v", "Latest ZapretGUI installed: v") + cur); return; }
                     newGui = latest.ToString(3);
                     UpdateUi();
-                    if (MessageBox.Show(this,
+                    if (Ask.Show(this,
                         L.T("Обновить ZapretGUI с v" + cur + " до v" + newGui + "?\n\nПрограмма перезапустится. Обход продолжит работать, настройки сохранятся.",
                             "Update ZapretGUI from v" + cur + " to v" + newGui + "?\n\nThe app will restart. The bypass keeps running and settings are kept."),
                         L.T("Обновление программы", "App update"), MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
@@ -1381,7 +1461,7 @@ namespace ZapretGui
                     if (tag == local) { newVersion = null; UpdateUi(); Toast(L.T("Установлена последняя версия ", "Latest version installed: ") + local); return; }
                     newVersion = tag;
                     UpdateUi();
-                    if (MessageBox.Show(this,
+                    if (Ask.Show(this,
                         L.T("Обновить zapret с v" + local + " до v" + tag + "?\n\nОбход ненадолго выключится. Ваши списки, настройки и fake-файлы сохранятся.\n" +
                             "Стратегии, которых нет в новой версии, будут перенесены в папку old-strategies.",
                             "Update zapret from v" + local + " to v" + tag + "?\n\nThe bypass will stop briefly. Your lists, settings and fake files are kept.\n" +

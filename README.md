@@ -18,8 +18,8 @@ GUI by **ryxIbtw**.
 ![Тёмная и светлая тема](docs/screenshots.png)
 
 **Главный экран**
-- Большая кнопка включает и выключает обход. `winws.exe` работает в фоне, консольных окон нет.
-- Индикаторы **YouTube ● Discord ●** раз в минуту проверяют, открываются ли сайты: зелёный — работает, жёлтый — частично, красный — нет. Клик по индикатору проверяет сразу.
+- Большая кнопка включает и выключает обход. `winws.exe` работает в фоне, консольных окон нет. Когда обход включён, за кнопкой светится мягкое пятно цвета акцента, а при включении от неё расходится кольцо. Во время подбора вокруг кнопки заполняется кольцо прогресса.
+- Плашки **YouTube** и **Discord** раз в минуту проверяют, открываются ли сайты, и показывают «3/3 · 124 мс». Цвет плашки: зелёный — работает, жёлтый — частично, красный — нет. Клик по плашке проверяет сразу.
 - **Стратегия**: стрелки ‹ › или колесо мыши, клик по названию открывает список. Если обход включён, он сразу перезапускается с новой стратегией.
 - **Подобрать стратегию** по очереди включает все стратегии, для каждой 3 раза проверяет YouTube и Discord и замеряет время ответа и скорость. В конце показывает таблицу от лучшей стратегии к худшей: лучшая выбрана сразу, но можно применить любую. Отменить можно кнопкой питания, тогда покажутся результаты по уже проверенным стратегиям. Колонка «История» показывает, как стратегия вела себя в прошлых подборах. Таблицу последнего подбора можно открыть через «Ещё».
 - **Автозапуск обхода с Windows** (служба), **игровой фильтр** с портами, **IPSet**.
@@ -34,7 +34,9 @@ GUI by **ryxIbtw**.
 
 **Настройки** (шестерёнка)
 - Язык: русский или английский.
-- **Оформление**: тема «Как в Windows» (переключается вместе с системой), тёмная или светлая, а также цвет акцента: авто (зелёный в тёмной теме, синий в светлой), зелёный, синий, фиолетовый, оранжевый или розовый. На Windows 11 используется шрифт Segoe UI Variable.
+- Настройки разбиты на группы «Основное», «Обход», «Обслуживание», у каждой строки свой значок.
+- **Оформление**: тема «Как в Windows» (переключается вместе с системой), тёмная, светлая, «Чёрная (AMOLED)» или «Тёплая светлая»; цвет акцента: авто (зелёный в тёмной теме, синий в светлой), зелёный, синий, фиолетовый, оранжевый или розовый; **масштаб интерфейса** 75–125%. На Windows 11 используется шрифт Segoe UI Variable.
+- Вопросы и предупреждения показываются в стиле программы, а не стандартными окнами Windows.
 - Запуск программы с Windows сразу в трей, через планировщик, без запроса UAC.
 - Крестик сворачивает в трей или закрывает программу.
 - **Сторож** перезапускает обход, если `winws.exe` упал (не больше 3 раз за 5 минут).
@@ -73,7 +75,7 @@ A minimal GUI for [zapret-discord-youtube](https://github.com/Flowseal/zapret-di
 
 Put `ZapretGUI.exe` next to `service.bat` in your zapret folder and run it (administrator rights are required by WinDivert).
 
-Features: one-button on/off, live YouTube/Discord availability indicators, automatic strategy finder, Windows autostart (service), game filter, IPSet, watchdog, built-in diagnostics with one-click fixes, fake file switcher, one-click zapret update that keeps your lists and settings, built-in list editor, event log, settings backup/restore, self-update with SHA256 verification, tray mode, dark/light theme, Russian/English UI.
+Features: one-button on/off with glow and progress ring, live YouTube/Discord availability cards, automatic strategy finder, Windows autostart (service), game filter, IPSet, watchdog, built-in diagnostics with one-click fixes, fake file switcher, one-click zapret update that keeps your lists and settings, built-in list editor, event log, settings backup/restore, self-update with SHA256 verification, tray mode, dark/light/AMOLED/warm themes with accent colors and 75–125% UI scale, Russian/English UI.
 
 Each release ships `ZapretGUI.exe.sha256`; compare it with `Get-FileHash ZapretGUI.exe` or the About window.
 

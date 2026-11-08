@@ -237,7 +237,7 @@ namespace ZapretGui
         {
             if (dirty && !Saved)
             {
-                var r = MessageBox.Show(this, L.T("Сохранить изменения в списке?", "Save changes to the list?"), Text,
+                var r = Ask.Show(this, L.T("Сохранить изменения в списке?", "Save changes to the list?"), Text,
                     MessageBoxButtons.YesNoCancel, MessageBoxIcon.Question);
                 if (r == DialogResult.Cancel) { e.Cancel = true; OpenInNotepad = false; return; }
                 if (r == DialogResult.Yes && !WriteFile()) { e.Cancel = true; OpenInNotepad = false; return; }

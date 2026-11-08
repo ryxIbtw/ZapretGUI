@@ -357,7 +357,7 @@ namespace ZapretGui
 
         void ClearDiscord()
         {
-            if (MessageBox.Show(this, L.T("Discord будет закрыт, его кэш удалён. Продолжить?", "Discord will be closed and its cache removed. Continue?"),
+            if (Ask.Show(this, L.T("Discord будет закрыт, его кэш удалён. Продолжить?", "Discord will be closed and its cache removed. Continue?"),
                 Text, MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
             int n = Diag.ClearDiscordCache();
             summary.ForeColor = n > 0 ? Theme.Accent : Theme.Warn;

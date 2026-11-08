@@ -16,7 +16,7 @@ namespace ZapretGui
         const long MaxEntry = 32 * 1024 * 1024;
 
         // Какие настройки программы переносятся (путь к zapret, запущенный процесс и т.п. — нет).
-        static readonly string[] PrefKeys = { "Strategy", "Theme", "Accent", "Lang", "CloseToTray", "Watchdog" };
+        static readonly string[] PrefKeys = { "Strategy", "Theme", "Accent", "Lang", "CloseToTray", "Watchdog", "Scale" };
 
         // Файлы внутри zip, которые разрешено записывать при импорте (защита от чужих путей в архиве).
         static readonly Regex Allowed = new Regex(
@@ -137,9 +137,10 @@ namespace ZapretGui
         {
             switch (key)
             {
-                case "Theme": return v == "system" || v == "dark" || v == "light";
+                case "Theme": return Theme.Modes.Contains(v);
                 case "Accent": return Theme.Accents.Contains(v);
                 case "Lang": return v == "ru" || v == "en";
+                case "Scale": int n; return int.TryParse(v, out n) && Theme.Scales.Contains(n);
                 case "CloseToTray":
                 case "Watchdog": return v == "0" || v == "1";
                 case "Strategy": return v.Length > 0 && v.Length < 200 && v.IndexOfAny(Path.GetInvalidFileNameChars()) < 0;

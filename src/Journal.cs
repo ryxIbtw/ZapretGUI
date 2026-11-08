@@ -80,7 +80,7 @@ namespace ZapretGui
             field = new TextField(true) { Bounds = new Rectangle(P(20), P(74), P(520), P(420)) };
             field.Box.ReadOnly = true;
             field.Box.BackColor = Theme.Surface;     // у ReadOnly поля Windows иначе делает серый фон
-            field.Box.Font = new Font("Consolas", 9f);
+            field.Box.Font = Theme.Mono;
             field.Box.WordWrap = true;               // длинные строки переносятся, время в начале строки всегда видно
 
             var copy = new AccentButton(L.T("Копировать", "Copy")) { Bounds = new Rectangle(P(400), P(508), P(140), P(36)) };

@@ -7,10 +7,11 @@ using System.Windows.Forms;
 
 namespace ZapretGui
 {
-    // Кнопка с заливкой цветом акцента.
+    // Кнопка с заливкой цветом акцента (Secondary — спокойная, цветом карточки).
     class AccentButton : PaintedControl
     {
         bool hover, down;
+        public bool Secondary;
         public AccentButton(string text) { Text = text; Cursor = Cursors.Hand; }
         protected override void OnMouseEnter(EventArgs e) { hover = true; Invalidate(); base.OnMouseEnter(e); }
         protected override void OnMouseLeave(EventArgs e) { hover = false; down = false; Invalidate(); base.OnMouseLeave(e); }
@@ -22,11 +23,12 @@ namespace ZapretGui
             var g = e.Graphics;
             g.SmoothingMode = SmoothingMode.AntiAlias;
             g.Clear(Parent != null ? Parent.BackColor : Theme.Bg);
-            Color c = Theme.Accent;
+            Color c = Secondary ? Theme.Knob : Theme.Accent;
             if (hover) c = Theme.Lerp(c, Theme.IsLight ? Color.Black : Color.White, 0.08f);
             if (down) c = Theme.Lerp(c, Color.Black, 0.12f);
             Theme.FillRound(g, c, new RectangleF(0, 0, Width - 1, Height - 1), Height / 2f);
-            TextRenderer.DrawText(g, Text, Theme.BodyStrong, ClientRectangle, Theme.IsLight ? Color.White : Theme.Bg, c,
+            Color fg = Secondary ? Theme.Text : (Theme.IsLight ? Color.White : Theme.Bg);
+            TextRenderer.DrawText(g, Text, Secondary ? Theme.Body : Theme.BodyStrong, ClientRectangle, fg, c,
                 TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
         }
     }

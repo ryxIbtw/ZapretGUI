@@ -57,7 +57,7 @@ namespace ZapretGui
                 AutoSize = true, Location = new Point(P(22), P(378)), BackColor = Theme.Bg };
             var hashBox = new Card { Bounds = new Rectangle(P(20), P(398), W - P(40), P(48)) };
             var hashText = new Label { Text = hash.Length == 64 ? hash.Substring(0, 32) + "\n" + hash.Substring(32) : hash,
-                Font = new Font("Consolas", 8.5f), ForeColor = Theme.Text, BackColor = Theme.Surface, AutoSize = false,
+                Font = Theme.MonoSmall, ForeColor = Theme.Text, BackColor = Theme.Surface, AutoSize = false,
                 TextAlign = ContentAlignment.MiddleCenter, Bounds = new Rectangle(P(8), P(4), hashBox.Width - P(16), P(40)) };
             hashBox.Controls.Add(hashText);
             var copy = new FlatLink(L.T("Копировать", "Copy"));
