@@ -150,6 +150,7 @@ namespace ZapretGui
         {
             Func<float, int> P = Theme.P;
             SuspendLayout();
+            cover = null;   // слой сдвига (если идёт) уничтожится вместе с остальными элементами
             foreach (Control c in Controls.Cast<Control>().ToList()) c.Dispose();
             Controls.Clear();
 
@@ -386,28 +387,29 @@ namespace ZapretGui
         }
 
         // Плавный сдвиг: show въезжает справа (dir = 1) или слева (dir = -1), hide уезжает в другую сторону.
+        // Двигаются не живые элементы (их десятки, и каждый перерисовывается отдельно), а две готовые
+        // картинки страниц в одном слое поверх; в конце слой убирается и под ним уже настоящая страница.
+        SlideCover cover;
         void SlideTo(Panel show, Panel hide, int dir)
         {
             slide.Stop();
-            int W = ClientSize.Width;
-            float t = 0;
-            show.Left = dir * W; show.Visible = true;
-            show.BringToFront(); hint.BringToFront();
-            EventHandler tick = null;
-            tick = delegate
-            {
-                t = Math.Min(1f, t + 0.09f);
-                float e = 1 - (float)Math.Pow(1 - t, 3);   // плавное замедление в конце
-                show.Left = (int)(dir * W * (1 - e));
-                hide.Left = (int)(-dir * W * e);
-                if (t >= 1)
-                {
-                    slide.Stop(); slide.Tick -= tick;
-                    show.Left = 0; hide.Visible = false; hide.Left = 0;
-                }
-            };
-            slide.Tick += tick;
-            slide.Start();
+            if (cover != null) { cover.Finish(); cover = null; }
+            show.Left = 0; hide.Left = 0;
+            Bitmap from = null, to = null;
+            try { from = SlideCover.GrabScreen(hide); } catch { }
+            if (from == null) { show.Visible = true; hide.Visible = false; show.BringToFront(); hint.BringToFront(); return; }
+
+            var c = new SlideCover(from, dir) { Bounds = hide.Bounds };
+            Controls.Add(c);
+            c.BringToFront();
+            c.Update();                                   // на экране — снимок старой страницы
+            show.Visible = true; show.BringToFront(); c.BringToFront(); hint.BringToFront();
+            hide.Visible = false;
+            try { to = SlideCover.Grab(show); } catch { }
+            if (to == null) { c.Finish(); return; }
+            c.Start(to);
+            cover = c;
+            c.Done += delegate { if (cover == c) cover = null; };
         }
 
         void BuildTray()
@@ -1562,6 +1564,12 @@ namespace ZapretGui
         protected override void OnShown(EventArgs e)
         {
             base.OnShown(e);
+            // прогрев: один раз «снять» страницу настроек, чтобы первый переход начинался без задержки
+            if (snapPath == null)
+                BeginInvoke((MethodInvoker)delegate
+                {
+                    try { using (SlideCover.Grab(settingsPage ?? mainPage)) { } } catch { }
+                });
 #if TESTHOOKS
             // тестовый режим снимка окна (только в сборке build.ps1 -NoAdmin)
             if (snapPath == null) return;
