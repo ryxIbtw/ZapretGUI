@@ -57,7 +57,7 @@ GUI by **ryxIbtw**.
 
 ## Сборка
 
-Нужна только Windows: используется встроенный компилятор .NET Framework 4.x.
+Нужна только Windows: используется встроенный компилятор .NET Framework 4.x. Интерфейс написан на WPF (`src\wpf`), логика — в `src\core`; сторонних библиотек нет.
 
 ```
 powershell -ExecutionPolicy Bypass -File build.ps1
