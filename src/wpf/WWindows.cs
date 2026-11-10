@@ -127,6 +127,111 @@ namespace ZapretGui
         [DllImport("user32.dll", EntryPoint = "SetClassLong")] static extern int SetClassLong(IntPtr h, int i, int v);
     }
 
+    // ================= Запуск подбора: режим и стратегии =================
+    class PickSetupW : WinBase
+    {
+        public string Mode { get; private set; }            // "std" / "dpi"; null — отмена
+        public List<string> Selected { get; private set; }
+        readonly ListBox box;
+        readonly TextBlock count;
+        Border optStd, optDpi;
+        string mode = "std";
+
+        public PickSetupW(Window owner, List<string> strategies, int targetCount, bool fromFile) : base(L.T("Подбор стратегии", "Find a strategy"), owner)
+        {
+            var sp = new StackPanel { Width = 420, Margin = new Thickness(22, 18, 22, 18) };
+            sp.Children.Add(W.T(Title, W.Title, W.Text, true));
+            sp.Children.Add(new TextBlock
+            {
+                Text = L.T("Проверки как в «Run Tests» у Flowseal: программа по очереди включит выбранные стратегии и проверит каждую. " +
+                           "Лучшая — у которой больше всего успешных проверок, при равенстве больше ответов на пинг. " +
+                           "Интернет может ненадолго прерываться.",
+                           "Same checks as Flowseal's “Run Tests”: the app turns on the selected strategies one by one and checks each. " +
+                           "The best one has the most successful checks, then the most ping replies. The connection may drop briefly."),
+                TextWrapping = TextWrapping.Wrap, Foreground = W.Muted, FontSize = W.Small, Margin = new Thickness(0, 6, 0, 14),
+            });
+
+            optStd = Option(L.T("Обычный (HTTP и пинг)", "Standard (HTTP and ping)"),
+                (fromFile ? L.T("сайты из utils\\targets.txt", "sites from utils\\targets.txt") : L.T("стандартные сайты Flowseal", "Flowseal's default sites")) +
+                L.T(" · ", " · ") + targetCount + L.T(" шт. · HTTP, TLS 1.2, TLS 1.3", " · HTTP, TLS 1.2, TLS 1.3"), "std");
+            optDpi = Option(L.T("DPI (обрыв на 16–20 КБ)", "DPI (16–20 KB freeze)"),
+                L.T("серверы из списка hyperion-cs, нужен интернет; IPSet на время станет «все IP»", "servers from the hyperion-cs list, needs internet; IPSet becomes “any IP” meanwhile"), "dpi");
+            optDpi.Margin = new Thickness(0, 8, 0, 0);
+            sp.Children.Add(optStd); sp.Children.Add(optDpi);
+
+            var head = new Grid { Margin = new Thickness(2, 16, 2, 6) };
+            head.Children.Add(W.T(L.T("Стратегии", "Strategies"), W.Caption, W.Muted, true));
+            var links = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+            var all = new FlatLink(L.T("Все", "All")); var none = new FlatLink(L.T("Ни одной", "None")) { Margin = new Thickness(12, 0, 0, 0) };
+            links.Children.Add(all); links.Children.Add(none);
+            head.Children.Add(links);
+            sp.Children.Add(head);
+
+            box = new ListBox { SelectionMode = SelectionMode.Multiple, Background = Brushes.Transparent, BorderThickness = new Thickness(0), FontSize = W.Body };
+            ScrollViewer.SetHorizontalScrollBarVisibility(box, ScrollBarVisibility.Disabled);
+            foreach (string s in strategies) box.Items.Add(s);
+            box.SelectAll();
+            box.SelectionChanged += delegate { UpdateCount(); };
+            all.Click += delegate { box.SelectAll(); };
+            none.Click += delegate { box.UnselectAll(); };
+            sp.Children.Add(new Border { Background = W.Surface, CornerRadius = new CornerRadius(14), Padding = new Thickness(6), Height = 250, Child = box });
+
+            var bar = new Grid { Margin = new Thickness(0, 16, 0, 0) };
+            count = W.T("", W.Small, W.Muted); count.VerticalAlignment = VerticalAlignment.Center;
+            bar.Children.Add(count);
+            var btns = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+            var cancel = new Pill(L.T("Отмена", "Cancel"), true) { MinWidth = 96 };
+            var go = new Pill(L.T("Начать", "Start")) { MinWidth = 110, Margin = new Thickness(10, 0, 0, 0) };
+            cancel.Click += delegate { Close(); };
+            go.Click += delegate
+            {
+                if (box.SelectedItems.Count == 0) return;
+                Selected = strategies.Where(s => box.SelectedItems.Contains(s)).ToList();   // в исходном порядке
+                Mode = mode;
+                Close();
+            };
+            btns.Children.Add(cancel); btns.Children.Add(go);
+            bar.Children.Add(btns);
+            sp.Children.Add(bar);
+            Root.Child = sp;
+            Pick("std");
+            UpdateCount();
+        }
+
+        Border Option(string title, string hint, string id)
+        {
+            var tx = new StackPanel();
+            tx.Children.Add(W.T(title, W.Body, W.Text));
+            var h = W.T(hint, W.Caption, W.Muted); h.TextWrapping = TextWrapping.Wrap; h.TextTrimming = TextTrimming.None;
+            tx.Children.Add(h);
+            var b = new Border { CornerRadius = new CornerRadius(12), Padding = new Thickness(14, 10, 14, 10), BorderThickness = new Thickness(1), Child = tx, Cursor = Cursors.Hand };
+            b.MouseLeftButtonUp += delegate { Pick(id); };
+            return b;
+        }
+
+        void Pick(string id)
+        {
+            mode = id;
+            foreach (var x in new[] { Tuple.Create(optStd, "std"), Tuple.Create(optDpi, "dpi") })
+            {
+                bool sel = x.Item2 == id;
+                x.Item1.Background = sel ? W.AccentDeep : W.Surface;
+                x.Item1.BorderBrush = sel ? (Brush)W.AccentLine : Brushes.Transparent;
+            }
+            UpdateCount();
+        }
+
+        void UpdateCount()
+        {
+            if (count == null || box == null) return;
+            int n = box.SelectedItems.Count;
+            // время на стратегию: запуск ~1.5 с + три проверки по 4 с (обычный) или по 5 с (DPI), сайты проверяются параллельно
+            int sec = mode == "dpi" ? 17 : 14;
+            int min = Math.Max(1, (int)Math.Ceiling(n * sec / 60.0));
+            count.Text = L.T("Выбрано: " + n + "  ·  примерно до " + min + " мин.", "Selected: " + n + "  ·  up to about " + min + " min");
+        }
+    }
+
     // ================= Результаты подбора =================
     class PickW : WinBase
     {
@@ -135,10 +240,13 @@ namespace ZapretGui
         readonly List<Tuple<Border, PickResult>> rows = new List<Tuple<Border, PickResult>>();
         readonly Pill apply;
 
-        static Grid Cols()
+        string mode = "";   // "std", "dpi" или "" — подбор старой версии (YouTube/Discord)
+
+        Grid Cols()
         {
             var g = new Grid();
-            foreach (double w in new[] { 28.0, 212, 66, 66, 66, 92 }) g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(w) });
+            double[] widths = mode == "" ? new[] { 28.0, 212, 66, 66, 66, 92 } : new[] { 28.0, 196, 72, 60, 64, 62, 74 };
+            foreach (double w in widths) g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(w) });
             g.ColumnDefinitions.Add(new ColumnDefinition());
             return g;
         }
@@ -149,24 +257,37 @@ namespace ZapretGui
             Grid.SetColumn(t, col); g.Children.Add(t); return t;
         }
 
-        public PickW(Window owner, List<PickResult> ranked, bool partial, List<PickHistory.Run> history, string title)
+        public PickW(Window owner, List<PickResult> ranked, bool partial, List<PickHistory.Run> history, string title, string report)
             : base(title ?? L.T("Результаты подбора", "Strategy test results"), owner)
         {
             history = history ?? new List<PickHistory.Run>();
+            var first0 = ranked.FirstOrDefault(r => r.IsNew);
+            mode = first0 != null ? first0.Mode : "";
             var sp = new StackPanel { Width = 640, Margin = new Thickness(20, 16, 20, 18) };
             sp.Children.Add(W.T(Title, W.Title, W.Text, true));
             string hist = history.Count == 0
                 ? L.T(" История появится после следующего подбора.", " History will appear after the next test.")
                 : L.T(" «История» — прошлые подборы (до " + HistoryDots + "): зелёный — всё работало, жёлтый — частично, красный — нет.",
                       " “History” shows past tests (up to " + HistoryDots + "): green — all worked, yellow — partly, red — not.");
+            string how = mode == "dpi"
+                ? L.T("Режим DPI, как у Flowseal: «Обрыв» — сервер принял данные и замолчал (признак блокировки на 16–20 КБ). ",
+                      "DPI mode, as in Flowseal's test: “Freeze” — the server took the data and went silent (16–20 KB block). ")
+                : mode == "std"
+                ? L.T("Проверки как у Flowseal: каждый сайт по HTTP, TLS 1.2 и TLS 1.3, плюс пинг. Лучшая — больше всего успешных, при равенстве больше пингов. ",
+                      "Same checks as Flowseal: every site over HTTP, TLS 1.2 and TLS 1.3, plus ping. Best = most passed, then most pings. ")
+                : "";
             sp.Children.Add(new TextBlock
             {
-                Text = (partial ? L.T("Подбор прерван, показаны проверенные стратегии. ", "Testing was stopped; showing tested strategies. ") : "") +
-                       L.T("Лучшая по замерам выделена, можно выбрать другую и нажать «Применить».", "The best by measurements is selected; pick another and click Apply.") + hist,
+                Text = (partial ? L.T("Подбор прерван, показаны проверенные стратегии. ", "Testing was stopped; showing tested strategies. ") : "") + how +
+                       L.T("Лучшая выделена, можно выбрать другую и нажать «Применить».", "The best is selected; pick another and click Apply.") + hist,
                 TextWrapping = TextWrapping.Wrap, Foreground = W.Muted, FontSize = W.Small, Margin = new Thickness(0, 4, 0, 10),
             });
             var head = Cols(); head.Margin = new Thickness(12, 0, 12, 4);
-            string[] names = { "#", L.T("Стратегия", "Strategy"), "YouTube", "Discord", L.T("Отклик", "Ping"), L.T("Скорость", "Speed"), L.T("История", "History") };
+            string[] names = mode == ""
+                ? new[] { "#", L.T("Стратегия", "Strategy"), "YouTube", "Discord", L.T("Отклик", "Ping"), L.T("Скорость", "Speed"), L.T("История", "History") }
+                : mode == "dpi"
+                ? new[] { "#", L.T("Стратегия", "Strategy"), L.T("Успешно", "Passed"), L.T("Ошибки", "Errors"), L.T("Нет TLS", "No TLS"), L.T("Обрыв", "Freeze"), "", L.T("История", "History") }
+                : new[] { "#", L.T("Стратегия", "Strategy"), L.T("Успешно", "Passed"), L.T("Ошибки", "Errors"), L.T("Нет TLS", "No TLS"), L.T("Пинг", "Ping"), L.T("Скорость", "Speed"), L.T("История", "History") };
             for (int i = 0; i < names.Length; i++) Cell(head, i, names[i], W.Caption, W.Dim);
             sp.Children.Add(head);
 
@@ -175,8 +296,16 @@ namespace ZapretGui
             sp.Children.Add(new ScrollViewer { Content = list, Height = 430, VerticalScrollBarVisibility = ScrollBarVisibility.Auto });
 
             var bar = new Grid { Margin = new Thickness(0, 14, 0, 0) };
-            bar.Children.Add(new TextBlock { Text = title == null ? L.T("«Отмена» вернёт то, что работало до подбора", "Cancel restores what was running before") : "",
-                Foreground = W.Dim, FontSize = W.Caption, VerticalAlignment = VerticalAlignment.Center });
+            var notes = new StackPanel { VerticalAlignment = VerticalAlignment.Center, MaxWidth = 380, HorizontalAlignment = HorizontalAlignment.Left };
+            notes.Children.Add(new TextBlock { Text = title == null ? L.T("«Отмена» вернёт то, что работало до подбора", "Cancel restores what was running before") : "",
+                Foreground = W.Dim, FontSize = W.Caption });
+            if (report != null)
+            {
+                var rl = new FlatLink(L.T("Открыть отчёт (как у Flowseal)", "Open the report (Flowseal format)"), W.Caption) { HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 2, 0, 0) };
+                rl.Click += delegate { try { Process.Start(new ProcessStartInfo("notepad.exe", "\"" + report + "\"") { UseShellExecute = true }); } catch { } };
+                notes.Children.Add(rl);
+            }
+            bar.Children.Add(notes);
             var btns = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
             var cancel = new Pill(L.T("Отмена", "Cancel"), true) { MinWidth = 110 };
             apply = new Pill(L.T("Применить", "Apply")) { MinWidth = 120, Margin = new Thickness(10, 0, 0, 0) };
@@ -200,20 +329,34 @@ namespace ZapretGui
             Func<int, int, Brush> ratio = (ok, max) => ok >= max ? W.Accent : ok > 0 ? W.Warn : W.Danger;
             Cell(g, 0, rank.ToString(), W.Small, W.Dim);
             Cell(g, 1, r.Name, r.Works && rank == 1 ? W.BodyStrong : W.Body, r.Works ? W.Text : W.Dim, r.Works && rank == 1);
-            if (r.Failed) { var f = Cell(g, 2, L.T("не запустилась", "failed to start"), W.Small, W.Dim); Grid.SetColumnSpan(f, 4); }
-            else
+            int histCol = mode == "" ? 6 : 7;
+            if (r.Failed) { var f = Cell(g, 2, L.T("не запустилась", "failed to start"), W.Small, W.Dim); Grid.SetColumnSpan(f, histCol - 2); }
+            else if (mode == "")
             {
                 Cell(g, 2, r.YtOk + "/" + r.YtMax, W.Body, ratio(r.YtOk, r.YtMax));
                 Cell(g, 3, r.DcOk + "/" + r.DcMax, W.Body, ratio(r.DcOk, r.DcMax));
                 Cell(g, 4, r.Samples > 0 ? ((int)r.AvgMs) + L.T(" мс", " ms") : "—", W.Small, W.Muted);
                 Cell(g, 5, PickResult.FormatSpeed(r.SpeedKBps), W.Small, W.Muted);
             }
+            else
+            {
+                Cell(g, 2, r.Ok + "/" + r.Total, W.Body, ratio(r.Ok, r.Total));
+                Cell(g, 3, r.Err.ToString(), W.Small, r.Err > 0 ? W.Danger : W.Muted);
+                Cell(g, 4, r.Unsup.ToString(), W.Small, r.Unsup > 0 ? W.Warn : W.Muted);
+                if (mode == "dpi") Cell(g, 5, r.Blocked.ToString(), W.Small, r.Blocked > 0 ? W.Warn : W.Muted);
+                else
+                {
+                    int pt = r.PingOk + r.PingFail;
+                    Cell(g, 5, r.PingOk + "/" + pt, W.Small, pt > 0 && r.PingOk >= pt ? W.Accent : r.PingOk > 0 ? W.Warn : W.Danger);
+                    Cell(g, 6, PickResult.FormatSpeed(r.SpeedKBps), W.Small, W.Muted);
+                }
+            }
             var dots = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
             if (past.Count == 0) dots.Children.Add(W.T("—", W.Small, W.Dim));
             foreach (int lv in past)
                 dots.Children.Add(new Ellipse { Width = 8, Height = 8, Margin = new Thickness(0, 0, 5, 0),
                     Fill = lv == 2 ? W.Accent : lv == 1 ? W.Warn : lv == 0 ? W.Danger : W.Line });
-            Grid.SetColumn(dots, 6); g.Children.Add(dots);
+            Grid.SetColumn(dots, histCol); g.Children.Add(dots);
 
             var b = new Border { Background = W.Surface, CornerRadius = new CornerRadius(10), Padding = new Thickness(12, 0, 12, 0), Height = 38,
                 Margin = new Thickness(0, 0, 0, 4), Child = g, BorderThickness = new Thickness(1), BorderBrush = Brushes.Transparent };

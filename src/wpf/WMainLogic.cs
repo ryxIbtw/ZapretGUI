@@ -363,16 +363,14 @@ namespace ZapretGui
             if (busy) return;
             strategies = z.Strategies();
             if (strategies.Count == 0) { Toast(L.T("Не найдено ни одной стратегии (.bat)", "No strategies (.bat) found"), true); return; }
-            var list = new List<string>(strategies);
-            int minutes = Math.Max(2, (int)Math.Ceiling(list.Count * 10 / 60.0));
-            if (AskW.Show(this,
-                L.T("Программа по очереди включит все стратегии (" + list.Count + " шт.), для каждой 3 раза проверит YouTube и Discord " +
-                    "и замерит скорость. В конце покажет таблицу результатов, где можно выбрать стратегию.\n\n" +
-                    "Это займёт до " + minutes + " мин., интернет может ненадолго прерываться.\n\nНачать?",
-                    "The app will try every strategy (" + list.Count + "), check YouTube and Discord 3 times for each and measure speed. " +
-                    "At the end it shows a results table where you can pick a strategy.\n\n" +
-                    "This takes up to " + minutes + " min; the connection may drop briefly.\n\nStart?"),
-                L.T("Подбор стратегии", "Find a strategy"), MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
+            if (!FlowTest.CurlAvailable) { Toast(L.T("Не найден curl.exe — он нужен для проверок", "curl.exe not found — it is needed for the checks"), true); return; }
+            FlowTest.RestoreLeftoverIpset(z);   // прошлый тест DPI прервался — вернуть IPSet
+            var targets = FlowTest.LoadTargets(z);
+            var setup = new PickSetupW(this, strategies, targets.Count, FlowTest.TargetsFromFile(z));
+            setup.ShowDialog();
+            if (setup.Mode == null) return;
+            var list = setup.Selected;
+            string testMode = setup.Mode;
 
             bool wasActive = Active;
             string prev = selected;
@@ -381,16 +379,28 @@ namespace ZapretGui
             pickDone.Reset();
             busyText = L.T("Подбор…", "Testing…");
             UpdateUi();
-            Journal.Add(L.T("Подбор стратегии начат: ", "Strategy test started: ") + list.Count + L.T(" шт.", " strategies"));
+            Journal.Add(L.T("Подбор стратегии начат: ", "Strategy test started: ") + list.Count + L.T(" шт., режим ", " strategies, mode ") +
+                (testMode == "dpi" ? "DPI" : L.T("обычный", "standard")));
 
             ThreadPool.QueueUserWorkItem(delegate
             {
                 var results = new List<PickResult>();
                 Exception err = null;
+                bool ipsetSwitched = false;
+                string payload = null;
+                List<DpiTarget> dpiTargets = null;
                 try
                 {
                     try
                     {
+                    if (testMode == "dpi")
+                    {
+                        Post(() => { busyText = L.T("Загрузка списка серверов…", "Loading the server list…"); UpdateUi(); });
+                        dpiTargets = FlowTest.LoadDpiSuite();
+                        if (dpiTargets.Count == 0) throw new Exception(L.T("Не удалось скачать список серверов для проверки DPI", "Could not download the server list for the DPI check"));
+                        payload = FlowTest.MakePayload();
+                        ipsetSwitched = FlowTest.SwitchIpsetToAny(z);
+                    }
                     for (int i = 0; i < list.Count && !cancelPick; i++)
                     {
                         int idx = i; string name = list[i];
@@ -401,22 +411,32 @@ namespace ZapretGui
                             pickProgress = idx / (double)list.Count;
                             UpdateUi();
                         });
-                        var res = new PickResult { Name = name };
-                        try
-                        {
-                            z.Start(name, false);
-                            Thread.Sleep(1500);
-                            NetCheck.Measure(res, PickResult.PlannedRounds, 5000, () => cancelPick);
-                        }
+                        var res = new PickResult { Name = name, Mode = testMode };
+                        try { z.Start(name, false); }   // Start сам ждёт, пока winws поднимется
                         catch { res.Failed = true; }
-                        if (cancelPick && res.Rounds < PickResult.PlannedRounds && res.YtOk + res.DcOk > 0) break;   // недопроверенную не показываем
+                        if (!res.Failed)
+                        {
+                            if (testMode == "dpi") FlowTest.RunDpi(res, dpiTargets, payload, () => cancelPick);
+                            else
+                            {
+                                FlowTest.RunStandard(res, targets, () => cancelPick);
+                                // скорость — только для сведения, на выбор лучшей не влияет
+                                if (res.Ok > 0 && !cancelPick) res.SpeedKBps = NetCheck.SpeedKBps(NetCheck.SpeedUrl, 8000);
+                            }
+                        }
+                        if (cancelPick && !res.Failed) break;   // недопроверенную не показываем
                         results.Add(res);
                     }
                     z.StopAll(false);   // выбор — за пользователем, до него обход выключен
                     }
                     catch (Exception ex) { err = ex; }
                 }
-                finally { pickDone.Set(); }
+                finally
+                {
+                    if (ipsetSwitched) FlowTest.RestoreIpset(z);
+                    if (payload != null) try { File.Delete(payload); } catch { }
+                    pickDone.Set();
+                }
 
                 Post(() =>
                 {
@@ -434,10 +454,13 @@ namespace ZapretGui
             if (!partial && results.Count > 0) PickHistory.Save(results);
             var ranked = PickResult.Rank(results);
             var best = ranked.FirstOrDefault(r => r.Works);
+            // отчёт в utils\test results — как у Flowseal
+            string report = results.Count > 0 ? FlowTest.SaveReport(z, results, best) : null;
             Journal.Add((partial ? L.T("Подбор отменён", "Strategy test cancelled") : L.T("Подбор завершён", "Strategy test finished")) +
                 L.T(": проверено ", ": tested ") + results.Count +
-                (best != null ? L.T(", лучшая — ", ", best — ") + best.Name + " (YouTube " + best.YtOk + "/" + best.YtMax + ", Discord " + best.DcOk + "/" + best.DcMax + ")"
-                              : L.T(", рабочих нет", ", none worked")));
+                (best != null ? L.T(", лучшая — ", ", best — ") + best.Name + L.T(" (успешно ", " (passed ") + best.Ok + "/" + best.Total + ")"
+                              : L.T(", рабочих нет", ", none worked")) +
+                (report != null ? L.T(" · отчёт: ", " · report: ") + report : ""));
             if (best == null)
             {
                 Toast(partial ? L.T("Подбор отменён", "Testing cancelled")
@@ -446,18 +469,14 @@ namespace ZapretGui
                 return;
             }
             ShowFromTray();
-            var w = new PickW(this, ranked, partial, past, null);
+            var w = new PickW(this, ranked, partial, past, null, report);
             w.ShowDialog();
             string chosen = w.Chosen;
             if (chosen == null) { RestoreAfterPick(wasActive, prev); return; }
 
-            var r0 = ranked.First(r => r.Name == chosen);
             selected = chosen;
             Prefs.Set("Strategy", chosen);
-            netYt = r0.YtOk / (float)r0.YtMax;
-            netDc = r0.DcOk / (float)r0.DcMax;
-            lastNet = DateTime.Now;
-            Start();
+            Start();   // после запуска плашки YouTube/Discord проверятся сами
             Toast(L.T("Применена стратегия «" + chosen + "»", "Applied strategy “" + chosen + "”"));
         }
 
@@ -468,7 +487,7 @@ namespace ZapretGui
             if (runs.Count == 0) { Toast(L.T("Подбор ещё не запускался", "No strategy test has been run yet")); return; }
             var last = runs[runs.Count - 1];
             runs.RemoveAt(runs.Count - 1);
-            var w = new PickW(this, PickResult.Rank(last.Results), false, runs, L.T("Прошлый подбор · ", "Last test · ") + last.When.ToString("dd.MM.yyyy HH:mm"));
+            var w = new PickW(this, PickResult.Rank(last.Results), false, runs, L.T("Прошлый подбор · ", "Last test · ") + last.When.ToString("dd.MM.yyyy HH:mm"), null);
             w.ShowDialog();
             string chosen = w.Chosen;
             if (chosen == null || !z.Strategies().Contains(chosen)) return;

@@ -12,6 +12,13 @@ namespace ZapretGui
     {
         public string Name;
         public bool Failed;              // стратегия не запустилась
+
+        // Проверки как в «Run Tests» Flowseal (utils\test zapret.ps1). Mode: "std" — HTTP/пинг, "dpi" — обрыв 16–20 КБ.
+        public string Mode = "";         // "" — подбор старых версий программы (поля ниже не заполнены)
+        public int Ok, Err, Unsup, PingOk, PingFail, Blocked, Total;
+        public List<string> Details = new List<string>();   // строки для файла отчёта (как у Flowseal)
+
+        // старый подбор (до 2.1): 3 круга по YouTube и Discord — нужен только для чтения истории
         public int YtOk, DcOk, Rounds, Samples;
         public long TotalMs;
         public double SpeedKBps;
@@ -19,20 +26,37 @@ namespace ZapretGui
         public const int PlannedRounds = 3;
         public int YtMax { get { return PlannedRounds * NetCheck.YouTube.Length; } }
         public int DcMax { get { return PlannedRounds * NetCheck.Discord.Length; } }
-        // Доля успешных проверок; раунды, пропущенные после пустого первого, считаются проваленными.
-        public double Ratio { get { return Failed ? -1 : (YtOk + DcOk) / (double)(PlannedRounds * NetCheck.Max); } }
+        public bool IsNew { get { return Mode != ""; } }
+        // Доля успешных проверок.
+        public double Ratio
+        {
+            get
+            {
+                if (Failed) return -1;
+                if (IsNew) return Total > 0 ? Ok / (double)Total : 0;
+                return (YtOk + DcOk) / (double)(PlannedRounds * NetCheck.Max);
+            }
+        }
         public double AvgMs { get { return Samples > 0 ? TotalMs / (double)Samples : double.MaxValue; } }
-        public bool Works { get { return !Failed && YtOk + DcOk > 0; } }
+        public bool Works { get { return !Failed && (IsNew ? Ok > 0 : YtOk + DcOk > 0); } }
         // 2 — прошла все проверки, 1 — частично, 0 — не работала
         public int Level { get { return Ratio >= 0.999 ? 2 : Works ? 1 : 0; } }
 
-        // Сначала стабильность (доля успешных проверок), затем скорость, затем время ответа.
+        // Как у Flowseal: больше всего успешных проверок, при равенстве — больше ответов на пинг.
+        // При полном равенстве остаётся порядок проверки (у Flowseal порядок при равенстве случайный).
+        // Старые результаты (до 2.1) — по прежнему правилу.
         public static List<PickResult> Rank(IEnumerable<PickResult> list)
         {
-            return list.OrderByDescending(r => Math.Round(r.Ratio, 3))
-                       .ThenByDescending(r => r.SpeedKBps)
-                       .ThenBy(r => r.AvgMs)
-                       .ToList();
+            var all = list.ToList();
+            if (all.Any(r => r.IsNew))
+                return all.OrderBy(r => r.Failed ? 1 : 0)
+                          .ThenByDescending(r => r.Ok)
+                          .ThenByDescending(r => r.PingOk)
+                          .ToList();
+            return all.OrderByDescending(r => Math.Round(r.Ratio, 3))
+                      .ThenByDescending(r => r.SpeedKBps)
+                      .ThenBy(r => r.AvgMs)
+                      .ToList();
         }
 
         public static string FormatSpeed(double kbps)
@@ -80,12 +104,21 @@ namespace ZapretGui
                         curKey = p[0];
                         runs.Add(cur);
                     }
-                    cur.Results.Add(new PickResult
+                    var r = new PickResult
                     {
                         Name = p[1], Failed = p[2] == "1",
                         YtOk = int.Parse(p[3], Inv), DcOk = int.Parse(p[4], Inv), Rounds = int.Parse(p[5], Inv),
                         Samples = int.Parse(p[6], Inv), TotalMs = long.Parse(p[7], Inv), SpeedKBps = double.Parse(p[8], Inv)
-                    });
+                    };
+                    // с 2.1: \t режим \t успешно \t ошибки \t нет TLS \t пинг да \t пинг нет \t обрыв \t всего
+                    if (p.Length >= 17 && p[9] != "")
+                    {
+                        r.Mode = p[9];
+                        r.Ok = int.Parse(p[10], Inv); r.Err = int.Parse(p[11], Inv); r.Unsup = int.Parse(p[12], Inv);
+                        r.PingOk = int.Parse(p[13], Inv); r.PingFail = int.Parse(p[14], Inv); r.Blocked = int.Parse(p[15], Inv);
+                        r.Total = int.Parse(p[16], Inv);
+                    }
+                    cur.Results.Add(r);
                 }
             }
             catch { }
@@ -107,7 +140,10 @@ namespace ZapretGui
                     foreach (var r in run.Results)
                         sb.Append(key).Append('\t').Append(r.Name.Replace('\t', ' ')).Append('\t').Append(r.Failed ? "1" : "0").Append('\t')
                           .Append(r.YtOk.ToString(Inv)).Append('\t').Append(r.DcOk.ToString(Inv)).Append('\t').Append(r.Rounds.ToString(Inv)).Append('\t')
-                          .Append(r.Samples.ToString(Inv)).Append('\t').Append(r.TotalMs.ToString(Inv)).Append('\t').Append(r.SpeedKBps.ToString("0.#", Inv)).Append("\r\n");
+                          .Append(r.Samples.ToString(Inv)).Append('\t').Append(r.TotalMs.ToString(Inv)).Append('\t').Append(r.SpeedKBps.ToString("0.#", Inv))
+                          .Append('\t').Append(r.Mode).Append('\t').Append(r.Ok.ToString(Inv)).Append('\t').Append(r.Err.ToString(Inv))
+                          .Append('\t').Append(r.Unsup.ToString(Inv)).Append('\t').Append(r.PingOk.ToString(Inv)).Append('\t').Append(r.PingFail.ToString(Inv))
+                          .Append('\t').Append(r.Blocked.ToString(Inv)).Append('\t').Append(r.Total.ToString(Inv)).Append("\r\n");
                 }
                 Directory.CreateDirectory(Path.GetDirectoryName(FilePath));
                 File.WriteAllText(FilePath, sb.ToString(), new UTF8Encoding(false));

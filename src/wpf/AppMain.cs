@@ -110,17 +110,20 @@ namespace ZapretGui
             Window target = w;
             if (page == "pick")
             {
+                // выдуманные результаты — только для снимка окна
                 var demo = new System.Collections.Generic.List<PickResult> {
-                    new PickResult { Name = "general (ALT)", YtOk = 9, DcOk = 9, Rounds = 3, Samples = 18, TotalMs = 18 * 140, SpeedKBps = 820 },
-                    new PickResult { Name = "general (SIMPLE FAKE)", YtOk = 9, DcOk = 9, Rounds = 3, Samples = 18, TotalMs = 18 * 95, SpeedKBps = 2400 },
-                    new PickResult { Name = "general (ALT2)", YtOk = 6, DcOk = 9, Rounds = 3, Samples = 15, TotalMs = 15 * 210, SpeedKBps = 400 },
-                    new PickResult { Name = "general", YtOk = 0, DcOk = 0, Rounds = 1 },
-                    new PickResult { Name = "my custom", Failed = true } };
+                    new PickResult { Name = "general (ALT)", Mode = "std", Ok = 33, Err = 3, Total = 36, PingOk = 16, PingFail = 1, SpeedKBps = 820 },
+                    new PickResult { Name = "general (SIMPLE FAKE)", Mode = "std", Ok = 34, Err = 0, Unsup = 2, Total = 36, PingOk = 17, SpeedKBps = 2400 },
+                    new PickResult { Name = "general (ALT2)", Mode = "std", Ok = 34, Err = 2, Total = 36, PingOk = 15, PingFail = 2, SpeedKBps = 400 },
+                    new PickResult { Name = "general", Mode = "std", Ok = 12, Err = 24, Total = 36, PingOk = 17 },
+                    new PickResult { Name = "my custom", Mode = "std", Failed = true } };
                 var hist = new System.Collections.Generic.List<PickHistory.Run> {
                     new PickHistory.Run { When = DateTime.Now.AddDays(-1), Results = new System.Collections.Generic.List<PickResult> {
                         new PickResult { Name = "general (SIMPLE FAKE)", YtOk = 9, DcOk = 9, Rounds = 3 }, new PickResult { Name = "general (ALT)", YtOk = 5, DcOk = 9, Rounds = 3 } } } };
-                target = new PickW(w, PickResult.Rank(demo), false, hist, null);
+                target = new PickW(w, PickResult.Rank(demo), false, hist, null, @"C:\zapret\utils\test results\test_results.txt");
             }
+            else if (page == "picksetup")
+                target = new PickSetupW(w, w.Zap.Strategies(), FlowTest.LoadTargets(w.Zap).Count, FlowTest.TargetsFromFile(w.Zap));
             else if (page == "diag") target = new DiagW(w, w.Zap);
             else if (page == "about") target = new AboutW(w, "1.10.4");
             else if (page == "journal") target = new JournalW(w, () => "header");
