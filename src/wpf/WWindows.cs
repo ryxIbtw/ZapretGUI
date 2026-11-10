@@ -308,8 +308,23 @@ namespace ZapretGui
                     var fix = new Pill(it.FixText, false, 28) { Margin = new Thickness(8, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
                     fix.Click += delegate
                     {
-                        try { item.Fix(); } catch (Exception ex) { summary.Foreground = W.Danger; summary.Text = ex.Message; return; }
-                        Start();
+                        // исправление (sc, netsh, реестр) может идти несколько секунд — в фоне, чтобы окно не замирало
+                        if (running) return;
+                        running = true;
+                        fix.IsEnabled = false; fix.Opacity = 0.6;
+                        summary.Foreground = W.Muted;
+                        summary.Text = L.T("Исправляю…", "Fixing…");
+                        ThreadPool.QueueUserWorkItem(delegate
+                        {
+                            Exception err = null;
+                            try { item.Fix(); } catch (Exception ex) { err = ex; }
+                            Dispatcher.BeginInvoke((Action)delegate
+                            {
+                                running = false;
+                                if (err != null) { summary.Foreground = W.Danger; summary.Text = err.Message; fix.IsEnabled = true; fix.Opacity = 1; return; }
+                                Start();
+                            });
+                        });
                     };
                     Grid.SetColumn(fix, 2); g.Children.Add(fix);
                 }

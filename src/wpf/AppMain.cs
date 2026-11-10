@@ -50,12 +50,18 @@ namespace ZapretGui
                     PostMessage((IntPtr)0xFFFF, MainWindow.WM_SHOWME, IntPtr.Zero, IntPtr.Zero);
                     return 0;
                 }
+                // приложение и тема — до поиска папки, чтобы окна первого запуска были в стиле программы
+                var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
+                W.Install(app);
+                string mode = Prefs.Get("Theme", "system");
+                Theme.AccentName = Prefs.Get("Accent", "auto");
+                Theme.ApplyMode(Array.IndexOf(Theme.Modes, mode) >= 0 ? mode : "system");
+                W.Sync();
+
                 string root = FindRoot(rootArg);
                 if (root == null) return 1;
                 var z = new Zapret(root);
 
-                var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
-                W.Install(app);
                 var w = new MainWindow(z, snap, hidden);
 #if TESTHOOKS
                 if (snap != null) { Snap.Run(w, snap); app.Run(); return 0; }
@@ -72,16 +78,16 @@ namespace ZapretGui
             foreach (string c in new[] { arg, exeDir, Prefs.Get("Root", null) })
                 if (Zapret.IsValidRoot(c)) { Prefs.Set("Root", Path.GetFullPath(c)); return Path.GetFullPath(c); }
 
-            WF.MessageBox.Show(L.T("Не найдена папка zapret-discord-youtube.\n\nПоложите ZapretGUI.exe рядом с service.bat или укажите папку вручную в следующем окне.",
+            AskW.Show(null, L.T("Не найдена папка zapret-discord-youtube.\n\nПоложите ZapretGUI.exe рядом с service.bat или укажите папку вручную в следующем окне.",
                 "zapret-discord-youtube folder not found.\n\nPut ZapretGUI.exe next to service.bat or pick the folder in the next window."),
-                "Zapret", WF.MessageBoxButtons.OK, WF.MessageBoxIcon.Information);
+                "Zapret", MessageBoxButton.OK, MessageBoxImage.Information);
             while (true)
             {
                 using (var d = new WF.FolderBrowserDialog { Description = L.T("Папка zapret-discord-youtube (где лежит service.bat)", "zapret-discord-youtube folder (with service.bat)") })
                 {
                     if (d.ShowDialog() != WF.DialogResult.OK) return null;
                     if (Zapret.IsValidRoot(d.SelectedPath)) { Prefs.Set("Root", d.SelectedPath); return d.SelectedPath; }
-                    WF.MessageBox.Show(L.T("В этой папке нет service.bat и папки bin.", "This folder has no service.bat and bin folder."), "Zapret", WF.MessageBoxButtons.OK, WF.MessageBoxIcon.Warning);
+                    AskW.Show(null, L.T("В этой папке нет service.bat и папки bin.", "This folder has no service.bat and bin folder."), "Zapret", MessageBoxButton.OK, MessageBoxImage.Warning);
                 }
             }
         }

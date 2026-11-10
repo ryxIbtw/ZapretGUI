@@ -20,8 +20,11 @@ namespace ZapretGui
         string selected = "";
         bool autostart;
         bool busy; string busyText = "";
-        bool picking, cancelPick; string pickName;
+        bool picking; volatile bool cancelPick; string pickName;
         double pickProgress;
+        // чтобы при выходе посреди подбора дождаться его конца и вернуть обход, как был
+        readonly ManualResetEvent pickDone = new ManualResetEvent(true);
+        bool pickWasActive; string pickPrev;
         bool running, svc;
         string activeStrategy;
         string newVersion, newGui;
@@ -374,6 +377,8 @@ namespace ZapretGui
             bool wasActive = Active;
             string prev = selected;
             busy = true; picking = true; cancelPick = false; expectRunning = false; pickProgress = 0;
+            pickWasActive = wasActive; pickPrev = prev;
+            pickDone.Reset();
             busyText = L.T("Подбор…", "Testing…");
             UpdateUi();
             Journal.Add(L.T("Подбор стратегии начат: ", "Strategy test started: ") + list.Count + L.T(" шт.", " strategies"));
@@ -384,6 +389,8 @@ namespace ZapretGui
                 Exception err = null;
                 try
                 {
+                    try
+                    {
                     for (int i = 0; i < list.Count && !cancelPick; i++)
                     {
                         int idx = i; string name = list[i];
@@ -406,8 +413,10 @@ namespace ZapretGui
                         results.Add(res);
                     }
                     z.StopAll(false);   // выбор — за пользователем, до него обход выключен
+                    }
+                    catch (Exception ex) { err = ex; }
                 }
-                catch (Exception ex) { err = ex; }
+                finally { pickDone.Set(); }
 
                 Post(() =>
                 {

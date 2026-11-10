@@ -61,10 +61,22 @@ namespace ZapretGui
                 else list.Add(Ok(L.T("Системный прокси не используется", "No system proxy")));
             }
 
-            // TCP timestamps — включаем всегда, как это делает service.bat
-            int ts = Zapret.Run("netsh.exe", "interface tcp set global timestamps=enabled");
-            list.Add(ts == 0 ? Ok(L.T("Метки времени TCP включены", "TCP timestamps enabled"))
-                             : Bad(L.T("Не удалось включить метки времени TCP", "Failed to enable TCP timestamps"), "netsh interface tcp set global timestamps=enabled"));
+            // TCP timestamps (нужны стратегиям). Диагностика только проверяет; включить — кнопкой, по решению пользователя.
+            bool? ts = TcpTimestamps();
+            if (ts == true) list.Add(Ok(L.T("Метки времени TCP включены", "TCP timestamps enabled")));
+            else
+            {
+                var it = Warn(ts == false ? L.T("Метки времени TCP выключены", "TCP timestamps are disabled")
+                                          : L.T("Не удалось узнать, включены ли метки времени TCP", "Could not tell whether TCP timestamps are enabled"),
+                              L.T("Они нужны стратегиям zapret; zapret и сам включает их при запуске", "zapret strategies need them; zapret also turns them on when it starts"));
+                it.FixText = L.T("Включить", "Enable");
+                it.Fix = () =>
+                {
+                    if (Zapret.Run("netsh.exe", "interface tcp set global timestamps=enabled") != 0)
+                        throw new Exception(L.T("Не удалось включить метки времени TCP (нужны права администратора)", "Could not enable TCP timestamps (administrator rights required)"));
+                };
+                list.Add(it);
+            }
 
             // Конфликтующие программы
             bool adguard = Process.GetProcessesByName("AdguardSvc").Length > 0;
@@ -143,6 +155,23 @@ namespace ZapretGui
         static void AddConflict(List<DiagItem> list, List<ServiceController> found, string name, string detail)
         {
             list.Add(found.Count > 0 ? Bad(L.T("Найдено: ", "Found: ") + name, detail) : Ok(name + L.T(" не мешает", ": no conflict")));
+        }
+
+        // Состояние «RFC 1323 Timestamps» из «netsh interface tcp show global»: true/false, null — не удалось понять.
+        static bool? TcpTimestamps()
+        {
+            string s = Zapret.RunOutput("netsh.exe", "interface tcp show global");
+            if (s == null) return null;
+            foreach (string raw in s.Split('\n'))
+            {
+                if (raw.IndexOf("1323", StringComparison.Ordinal) < 0) continue;
+                int colon = raw.LastIndexOf(':');
+                string v = (colon >= 0 ? raw.Substring(colon + 1) : raw).Trim().ToLowerInvariant();
+                if (v.StartsWith("enabled") || v.StartsWith("включ")) return true;
+                if (v.StartsWith("disabled") || v.StartsWith("allowed") || v.StartsWith("отключ") || v.StartsWith("выключ") || v.StartsWith("разреш")) return false;
+                return null;
+            }
+            return null;
         }
 
         static bool HasDoh()

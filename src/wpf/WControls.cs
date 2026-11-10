@@ -388,15 +388,24 @@ namespace ZapretGui
             Set(-1, false, "");
         }
 
+        Brush lastColor; double lastFill = -1;
+
         // v: доля открывшихся адресов 0..1, -1 — неизвестно.
         public void Set(float v, bool checking, string metaText)
         {
             bool known = !checking && v >= 0;
             Brush c = !known ? W.Muted : v >= 0.99f ? W.Accent : v > 0.01f ? W.Warn : W.Danger;
-            tintFill.Background = c; tintLine.BorderBrush = c; tile.Background = c; icon.Brush = c;
-            Fx.To(tintFill, OpacityProperty, known ? (Theme.IsLight ? 0.07 : 0.09) : 0, 250);
-            Fx.To(tintLine, OpacityProperty, known ? 0.25 : 0, 250);
-            meta.Text = checking ? L.T("проверка…", "checking…") : v < 0 ? L.T("нажмите, чтобы проверить", "click to check") : metaText;
+            double fill = known ? (Theme.IsLight ? 0.07 : 0.09) : 0;
+            // анимацию запускаем только если состояние поменялось (Set вызывается каждые 2 секунды)
+            if (c != lastColor || fill != lastFill)
+            {
+                tintFill.Background = c; tintLine.BorderBrush = c; tile.Background = c; icon.Brush = c;
+                Fx.To(tintFill, OpacityProperty, fill, 250);
+                Fx.To(tintLine, OpacityProperty, known ? 0.25 : 0, 250);
+                lastColor = c; lastFill = fill;
+            }
+            string m = checking ? L.T("проверка…", "checking…") : v < 0 ? L.T("нажмите, чтобы проверить", "click to check") : metaText;
+            if (meta.Text != m) meta.Text = m;
             meta.Foreground = known ? W.Muted : W.Dim;
         }
         protected override void OnHot(bool on) { Fx.To(hover, OpacityProperty, on ? 0.04 : 0, 140); }

@@ -48,14 +48,21 @@ namespace ZapretGui
 
         public string Winws { get { return Path.Combine(Bin, "winws.exe"); } }
 
+        // Версия из service.bat. Файл перечитывается только если он изменился (окно спрашивает версию каждые 2 секунды).
+        DateTime versionStamp; string versionCache;
         public string LocalVersion
         {
             get
             {
                 try
                 {
-                    var m = Regex.Match(File.ReadAllText(Path.Combine(Root, "service.bat")), "set \"LOCAL_VERSION=([^\"]+)\"");
-                    return m.Success ? m.Groups[1].Value.Trim() : "";
+                    string f = Path.Combine(Root, "service.bat");
+                    DateTime t = File.GetLastWriteTimeUtc(f);
+                    if (versionCache != null && t == versionStamp) return versionCache;
+                    var m = Regex.Match(File.ReadAllText(f), "set \"LOCAL_VERSION=([^\"]+)\"");
+                    versionCache = m.Success ? m.Groups[1].Value.Trim() : "";
+                    versionStamp = t;
+                    return versionCache;
                 }
                 catch { return ""; }
             }
@@ -245,6 +252,26 @@ namespace ZapretGui
         static void WriteIfMissing(string f, string content)
         {
             if (!File.Exists(f)) File.WriteAllText(f, content, Utf8NoBom);
+        }
+
+        // Запускает программу и возвращает её вывод (или null). Консольные утилиты пишут в кодировке OEM (cp866 для русского).
+        public static string RunOutput(string exe, string args)
+        {
+            try
+            {
+                var psi = new ProcessStartInfo(exe, args)
+                {
+                    UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true,
+                    StandardOutputEncoding = Encoding.GetEncoding(System.Globalization.CultureInfo.CurrentCulture.TextInfo.OEMCodePage),
+                };
+                using (var p = Process.Start(psi))
+                {
+                    string s = p.StandardOutput.ReadToEnd();
+                    p.WaitForExit(15000);
+                    return s;
+                }
+            }
+            catch { return null; }
         }
 
         public static int Run(string exe, string args)

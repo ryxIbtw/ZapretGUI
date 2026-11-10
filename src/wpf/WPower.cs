@@ -24,6 +24,8 @@ namespace ZapretGui
         readonly TextBlock title, subtitle;
         readonly RadialGradientBrush glowBrush;
         bool on, busy, hot, down, compact;
+        bool initialized;   // первое SetOn — всегда без анимации
+        bool breathing;     // идёт «дыхание» света
         double progress = -1;
 
         // Прогресс подбора с плавным догоном (анимируемое свойство).
@@ -95,6 +97,8 @@ namespace ZapretGui
             W.Changed += UpdateGlowColors;
             UpdateGlowColors();
             Unloaded += delegate { W.Changed -= UpdateGlowColors; };
+            // окно спрятано в трей — «дыхание» не крутим, чтобы не тратить процессор
+            IsVisibleChanged += delegate { UpdateBreath(); };
         }
 
         public TextBlock TitleBlock { get { return title; } }
@@ -127,14 +131,16 @@ namespace ZapretGui
         // animate = false — сразу в нужном состоянии (при первом показе).
         public void SetOn(bool value, bool animate)
         {
-            if (on == value && animate) return;
+            if (initialized && on == value) return;   // ничего не поменялось — ничего не трогаем
+            if (!initialized) animate = false;        // новая кнопка сразу в нужном состоянии, без волны
+            initialized = true;
             bool turnedOn = value && !on;
             on = value;
             double ms = animate ? 350 : 0;
             Apply(onFill, on ? 1 : 0, ms);
             Apply(glyphOn, on ? 1 : 0, ms);
             Apply(glowHost, on ? 1 : 0, animate ? 600 : 0);
-            if (on) Breathe(); else { glowScale.BeginAnimation(ScaleTransform.ScaleXProperty, null); glowScale.BeginAnimation(ScaleTransform.ScaleYProperty, null); glow.BeginAnimation(OpacityProperty, null); }
+            UpdateBreath();
             if (turnedOn && animate && !busy && !compact) Ripple();
         }
 
@@ -143,14 +149,25 @@ namespace ZapretGui
             if (ms <= 0) Fx.Set(e, OpacityProperty, to); else Fx.To(e, OpacityProperty, to, ms);
         }
 
-        // мягкое «дыхание» света, пока обход включён
-        void Breathe()
+        // мягкое «дыхание» света: только пока обход включён и кнопку видно
+        void UpdateBreath()
         {
-            if (compact) return;
-            var a = new DoubleAnimation(0.96, 1.06, TimeSpan.FromSeconds(2.4)) { AutoReverse = true, RepeatBehavior = RepeatBehavior.Forever, EasingFunction = Fx.InOut };
-            glowScale.BeginAnimation(ScaleTransform.ScaleXProperty, a);
-            glowScale.BeginAnimation(ScaleTransform.ScaleYProperty, a);
-            glow.BeginAnimation(OpacityProperty, new DoubleAnimation(0.8, 1, TimeSpan.FromSeconds(2.4)) { AutoReverse = true, RepeatBehavior = RepeatBehavior.Forever, EasingFunction = Fx.InOut });
+            bool want = on && !compact && IsVisible;
+            if (want == breathing) return;
+            breathing = want;
+            if (want)
+            {
+                var a = new DoubleAnimation(0.96, 1.06, TimeSpan.FromSeconds(2.4)) { AutoReverse = true, RepeatBehavior = RepeatBehavior.Forever, EasingFunction = Fx.InOut };
+                glowScale.BeginAnimation(ScaleTransform.ScaleXProperty, a);
+                glowScale.BeginAnimation(ScaleTransform.ScaleYProperty, a);
+                glow.BeginAnimation(OpacityProperty, new DoubleAnimation(0.8, 1, TimeSpan.FromSeconds(2.4)) { AutoReverse = true, RepeatBehavior = RepeatBehavior.Forever, EasingFunction = Fx.InOut });
+            }
+            else
+            {
+                glowScale.BeginAnimation(ScaleTransform.ScaleXProperty, null);
+                glowScale.BeginAnimation(ScaleTransform.ScaleYProperty, null);
+                glow.BeginAnimation(OpacityProperty, null);
+            }
         }
 
         // расходящееся кольцо в момент включения

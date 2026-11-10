@@ -469,11 +469,15 @@ namespace ZapretGui
             float dpi = 1f;
             try { using (var g = System.Drawing.Graphics.FromHwnd(IntPtr.Zero)) dpi = g.DpiX / 96f; } catch { }
             int small = Math.Max(16, (int)Math.Round(16 * dpi));
+            var old = new[] { iconApp, iconOn, iconOff, iconBusy };
             iconApp = Theme.MakeIcon((int)Math.Round(32 * dpi), 1);
             iconOn = Theme.MakeIcon(small, 1);
             iconOff = Theme.MakeIcon(small, 0);
             iconBusy = Theme.MakeIcon(small, 2);
             Icon = Imaging.CreateBitmapSourceFromHIcon(iconApp.Handle, Int32Rect.Empty, BitmapSizeOptions.FromEmptyOptions());
+            // старые значки (после смены темы) освобождаем — трей сначала получает новый
+            if (tray != null) tray.Icon = busy || picking ? iconBusy : running ? iconOn : iconOff;
+            foreach (var ic in old) if (ic != null) { try { DestroyIcon(ic.Handle); } catch { } ic.Dispose(); }
         }
 
         public static BitmapSource LogoImage(int px)
@@ -534,6 +538,23 @@ namespace ZapretGui
 
         protected override void OnClosed(EventArgs e)
         {
+            // закрыли посреди подбора: остановить его, дождаться конца и вернуть обход, если он был включён
+            if (picking)
+            {
+                cancelPick = true;
+                pickDone.WaitOne(15000);
+                if (pickWasActive)
+                    try
+                    {
+                        int pid = z.Start(pickPrev, autostart);
+                        Prefs.Set("RunPid", pid.ToString());
+                        Prefs.Set("RunStrategy", pickPrev);
+                        running = true;
+                    }
+                    catch { }
+                Journal.Add(L.T("Подбор прерван закрытием программы", "Strategy test stopped because the app was closed") +
+                    (pickWasActive ? L.T(", обход возвращён: ", ", bypass restored: ") + pickPrev : ""));
+            }
             Journal.Add(L.T("Программа закрыта", "App closed") + (running ? L.T(" (обход продолжает работать)", " (bypass keeps running)") : ""));
             tray.Visible = false;
             tray.Dispose();
@@ -551,5 +572,7 @@ namespace ZapretGui
         static extern bool SetForegroundWindow(IntPtr h);
         [System.Runtime.InteropServices.DllImport("gdi32.dll")]
         static extern bool DeleteObject(IntPtr h);
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        static extern bool DestroyIcon(IntPtr h);
     }
 }
