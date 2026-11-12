@@ -93,6 +93,7 @@ namespace ZapretGui
             power.SetBusy(busy);
             power.SetProgress(picking ? pickProgress : -1);
             power.SetText(statusText, statusBrush, subText);
+            UpdatePanel();
             cardYt.Set(netYt, netChecking, NetMeta(0, NetCheck.YouTube.Length));
             cardDc.Set(netDc, netChecking, NetMeta(NetCheck.YouTube.Length, NetCheck.Discord.Length));
             picker.SetValue(selected);
@@ -297,9 +298,19 @@ namespace ZapretGui
                 long[] ms = NetCheck.RunTimed(5000);
                 int yt = 0, dc = 0;
                 for (int i = 0; i < ms.Length; i++) if (ms[i] >= 0) { if (i < NetCheck.YouTube.Length) yt++; else dc++; }
+                // ничего не открылось — проверить обычный сайт: может, пропал весь интернет, а не обход
+                bool net = yt + dc > 0 || NetCheck.Probe("http://www.msftconnecttest.com/connecttest.txt", 4000) || NetCheck.Probe("https://ya.ru", 4000);
                 Post(() =>
                 {
+                    Stats.Add(new StatRec
+                    {
+                        T = DateTime.Now, On = Active, Strategy = Active ? (activeStrategy ?? selected) : "", Net = net,
+                        Yt = yt, YtMax = NetCheck.YouTube.Length, Dc = dc, DcMax = NetCheck.Discord.Length,
+                        YtMs = AvgMs(ms, 0, NetCheck.YouTube.Length), DcMs = AvgMs(ms, NetCheck.YouTube.Length, NetCheck.Discord.Length),
+                    });
                     netChecking = false;
+                    netUp = net;
+                    RefreshToday();
                     lastNet = DateTime.Now;
                     lastNetMs = ms;
                     netYt = yt / (float)NetCheck.YouTube.Length;
@@ -311,12 +322,19 @@ namespace ZapretGui
                         Journal.Add(L.T("Доступность: ", "Availability: ") + sig + (running ? "" : L.T(" (обход выключен)", " (bypass off)")));
                         lastNetSig = sig;
                     }
-                    if (running && wasOk && !ok)
+                    if (running && wasOk && !ok && net)
                         Toast(L.T("YouTube или Discord перестал открываться — попробуйте «Подобрать стратегию»",
                                   "YouTube or Discord stopped working — try “Find a strategy”"), true);
                     UpdateUi();
                 });
             });
+        }
+
+        static int AvgMs(long[] ms, int offset, int count)
+        {
+            long sum = 0; int n = 0;
+            for (int i = offset; i < offset + count && i < ms.Length; i++) if (ms[i] >= 0) { sum += ms[i]; n++; }
+            return n > 0 ? (int)(sum / n) : -1;
         }
 
         // Подпись на плашке: «3/3 · 124 мс» (среднее время по открывшимся адресам).
@@ -691,6 +709,7 @@ namespace ZapretGui
             WMenu.Add(m, L.T("IP-исключения (ipset-exclude-user)", "IP exclusions (ipset-exclude-user)"), false, () => EditList("ipset-exclude-user.txt"));
             WMenu.Sep(m);
             WMenu.Add(m, L.T("Результаты прошлого подбора", "Last strategy test results"), false, ShowLastPick);
+            WMenu.Add(m, L.T("Статистика", "Statistics"), false, ShowStats);
             WMenu.Add(m, L.T("Журнал событий", "Event log"), false, ShowJournal);
             WMenu.Add(m, L.T("Диагностика", "Diagnostics"), false, OpenDiag);
             WMenu.Add(m, L.T("Классическое меню (service.bat)", "Classic menu (service.bat)"), false, OpenServiceBat);
@@ -730,6 +749,7 @@ namespace ZapretGui
         // ---------- Журнал, резервная копия, «О программе» ----------
 
         void ShowJournal() { new JournalW(this, JournalHeader).ShowDialog(); }
+        void ShowStats() { new StatsW(this, Stats.Load).ShowDialog(); }
 
         // Сведения о системе в начале скопированного журнала.
         string JournalHeader()

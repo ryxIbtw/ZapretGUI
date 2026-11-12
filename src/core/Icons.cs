@@ -36,6 +36,10 @@ namespace ZapretGui
             { "help", "M12 2a10 10 0 1 0 0 20a10 10 0 1 0 0-20z M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3 M12 17h.01" },
             { "search", "M11 3a8 8 0 1 0 0 16a8 8 0 1 0 0-16z M21 21l-4.35-4.35" },
             { "list", "M8 6h13 M8 12h13 M8 18h13 M3 6h.01 M3 12h.01 M3 18h.01" },
+            { "chart", "M3 3v18h18 M8 17v-5 M13 17V8 M18 17v-8" },
+            { "file", "M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z M14 3v6h6 M8 13h8 M8 17h5" },
+            { "dots", "M5 12h.01 M12 12h.01 M19 12h.01" },
+            { "spark", "M12 3v4 M12 17v4 M3 12h4 M17 12h4 M6.3 6.3l2.5 2.5 M15.2 15.2l2.5 2.5 M6.3 17.7l2.5-2.5 M15.2 8.8l2.5-2.5" },
         };
         static readonly HashSet<string> Filled = new HashSet<string> { "play" };
 

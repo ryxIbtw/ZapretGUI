@@ -17,7 +17,7 @@ namespace ZapretGui
 {
     partial class MainWindow : Window
     {
-        public const double Wd = 380, Ht = 624;
+        public const double Wd = 600, Ht = 618;
         readonly Zapret z;
         readonly string snapPath;
         bool startHidden;
@@ -56,6 +56,7 @@ namespace ZapretGui
             snapPath = snap;
             startHidden = hidden && snap == null;
             Journal.Enabled = snap == null;
+            Stats.Enabled = snap == null;
             L.Init();
             Theme.SetScale(1f, UiScalePref / 100f);   // DPI WPF учитывает сам
             Theme.AccentName = Prefs.Get("Accent", "auto");
@@ -185,7 +186,7 @@ namespace ZapretGui
             root.Children.Add(pages);
             mainPage = Page(); settingsPage = Page(); welcomePage = Page();
             pages.Children.Add(mainPage); pages.Children.Add(settingsPage); pages.Children.Add(welcomePage);
-            BuildMainPage();
+            BuildPanelPage();
             BuildSettingsPage();
             BuildWelcomePage();
 
@@ -203,54 +204,6 @@ namespace ZapretGui
         static Grid Page()
         {
             return new Grid { RenderTransform = new TranslateTransform(), Visibility = Visibility.Collapsed, Background = W.Bg };
-        }
-
-        void BuildMainPage()
-        {
-            var sp = new StackPanel();
-            power = new PowerHero(120);
-            power.Click += delegate { TogglePower(); };
-            sp.Children.Add(power);
-
-            var cards = new Grid { Margin = new Thickness(20, 4, 20, 0) };
-            cards.ColumnDefinitions.Add(new ColumnDefinition());
-            cards.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(12) });
-            cards.ColumnDefinitions.Add(new ColumnDefinition());
-            cardYt = new ServiceCardW("YouTube", "play");
-            cardDc = new ServiceCardW("Discord", "chat");
-            Grid.SetColumn(cardDc, 2);
-            foreach (var c in new[] { cardYt, cardDc })
-            {
-                c.Click += delegate { CheckNet(); };
-                c.ToolTip = "";
-                c.ToolTipOpening += (s, e) => { ((FrameworkElement)s).ToolTip = NetTooltip(); };
-                cards.Children.Add(c);
-            }
-            sp.Children.Add(cards);
-
-            picker = new StrategyPickerW { Margin = new Thickness(20, 8, 20, 0) };
-            picker.Prev += delegate { StepStrategy(-1); };
-            picker.Next += delegate { StepStrategy(1); };
-            picker.Open += delegate { ShowStrategyMenu(picker, false); };
-            sp.Children.Add(picker);
-
-            rowAuto = new SettingRowW(L.T("Автозапуск обхода с Windows", "Start bypass with Windows"), true, null, L.T("устанавливается как служба", "installed as a service"));
-            rowGame = new SettingRowW(L.T("Игровой фильтр", "Game filter"), false, null, L.T("обход для игр и портов 1024+", "bypass for games, ports 1024+"));
-            rowIpset = new SettingRowW("IPSet", false, null, L.T("фильтр по IP-адресам", "filter by IP address"));
-            rowAuto.Click += delegate { ToggleAutostart(); };
-            rowGame.Click += delegate { ShowGameMenu(); };
-            rowIpset.Click += delegate { ShowIpsetMenu(); };
-            var card = new CardBox { Margin = new Thickness(20, 8, 20, 0) };
-            card.Add(rowAuto); card.Add(rowGame); card.Add(rowIpset);
-            sp.Children.Add(card);
-
-            var foot = Footer(
-                Tuple.Create<string, Action<FlatLink>>(L.T("Подобрать стратегию", "Find a strategy"), l => AutoPick()),
-                Tuple.Create<string, Action<FlatLink>>(L.T("Обновить IPSet", "Update IPSet"), l => UpdateIpset()),
-                Tuple.Create<string, Action<FlatLink>>(L.T("Ещё", "More"), l => ShowMoreMenu(l)));
-            foot.Margin = new Thickness(0, 8, 0, 0);
-            sp.Children.Add(foot);
-            mainPage.Children.Add(sp);
         }
 
         // Строка ссылок через «·».
@@ -282,7 +235,6 @@ namespace ZapretGui
             rowTheme = new SettingRowW(L.T("Оформление", "Appearance"), false, "palette", "", false, rh);
             rowGuiStart = new SettingRowW(L.T("Запускать программу с Windows", "Launch app with Windows"), true, "monitor", L.T("сразу свёрнутой в трей", "minimized to tray"), false, rh);
             rowTray = new SettingRowW(L.T("Крестик сворачивает в трей", "Close button hides to tray"), true, "tray", L.T("закрыть полностью — через значок в трее", "quit via the tray icon"), false, rh);
-            rowWatch = new SettingRowW(L.T("Сторож", "Watchdog"), true, "shield", L.T("перезапускать обход, если он упал", "restart the bypass if it crashes"), false, rh);
             rowFakes = new SettingRowW(L.T("Fake-файлы", "Fake files"), false, "layers", L.T("подмена пакетов для Discord и игр", "fake packets for Discord and games"), false, rh);
             rowDiag = new SettingRowW(L.T("Диагностика", "Diagnostics"), false, "wrench", L.T("конфликты, прокси, DNS, драйвер", "conflicts, proxy, DNS, driver"), true, rh);
             rowUpdate = new SettingRowW(L.T("Обновления", "Updates"), false, "download", "", false, rh);
@@ -290,11 +242,6 @@ namespace ZapretGui
             rowTheme.Click += delegate { ShowThemeMenu(); };
             rowGuiStart.Click += delegate { ToggleGuiAutostart(); };
             rowTray.Click += delegate { CloseToTray = !CloseToTray; UpdateUi(); };
-            rowWatch.Click += delegate
-            {
-                WatchdogOn = !WatchdogOn; UpdateUi();
-                Journal.Add(WatchdogOn ? L.T("Сторож включён", "Watchdog on") : L.T("Сторож выключен", "Watchdog off"));
-            };
             rowDiag.Click += delegate { OpenDiag(); };
             rowFakes.Click += delegate { ShowFakesMenu(); };
             rowUpdate.Click += delegate { ShowUpdatesMenu(); };
@@ -302,7 +249,7 @@ namespace ZapretGui
             group(L.T("Основное", "General"));
             var c1 = new CardBox(); c1.Add(rowLang); c1.Add(rowTheme); c1.Add(rowGuiStart); c1.Add(rowTray); sp.Children.Add(c1);
             group(L.T("Обход", "Bypass"));
-            var c2 = new CardBox(); c2.Add(rowWatch); c2.Add(rowFakes); sp.Children.Add(c2);
+            var c2 = new CardBox(); c2.Add(rowFakes); sp.Children.Add(c2);
             group(L.T("Обслуживание", "Maintenance"));
             var c3 = new CardBox(); c3.Add(rowDiag); c3.Add(rowUpdate); sp.Children.Add(c3);
 
@@ -323,7 +270,7 @@ namespace ZapretGui
             if (snapPath != null && Environment.GetEnvironmentVariable("ZAPRETGUI_SNAP_PAGE") == "welcome") show = true;
 #endif
             if (!show) return;
-            var sp = new StackPanel { Margin = new Thickness(20, 0, 20, 0) };
+            var sp = new StackPanel { Margin = new Thickness(20, 0, 20, 0), MaxWidth = 420 };
             var logo = new Image { Source = LogoImage(76), Width = 76, Height = 76, Margin = new Thickness(0, 30, 0, 0) };
             sp.Children.Add(logo);
             var t = W.T(L.T("Добро пожаловать!", "Welcome!"), W.Status, W.Text, true);

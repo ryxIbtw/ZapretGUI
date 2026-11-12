@@ -14,8 +14,8 @@ using WF = System.Windows.Forms;
 [assembly: AssemblyCompany("ryxIbtw")]
 [assembly: AssemblyCopyright("© ryxIbtw")]
 [assembly: AssemblyDescription("Интерфейс для zapret-discord-youtube by Flowseal. GUI by ryxIbtw")]
-[assembly: AssemblyVersion("2.1.0.0")]
-[assembly: AssemblyFileVersion("2.1.0.0")]
+[assembly: AssemblyVersion("2.2.0.0")]
+[assembly: AssemblyFileVersion("2.2.0.0")]
 
 namespace ZapretGui
 {
@@ -106,6 +106,8 @@ namespace ZapretGui
             w.WindowStartupLocation = WindowStartupLocation.Manual;
             w.Left = -3000; w.Top = 0;
             w.Show();
+            w.StatsSource = DemoStats;
+            w.RefreshToday();
             w.SnapPrepare();
             Window target = w;
             if (page == "pick")
@@ -134,6 +136,13 @@ namespace ZapretGui
                 target = new ListEditorW(w, f, L.T("Мои домены", "My domains"), L.T("Эти сайты тоже пойдут через обход  ·  lists\\list-general-user.txt", "These sites also go through the bypass"), false);
             }
             else if (page == "flyout") target = w.SnapFlyout();
+            else if (page == "stats")
+            {
+                var sw = new StatsW(w, DemoStats);
+                int range; int.TryParse(Environment.GetEnvironmentVariable("ZAPRETGUI_SNAP_RANGE") ?? "0", out range);
+                sw.Select(range);
+                target = sw;
+            }
             if (target != w && !(target is FlyoutW))
             {
                 target.WindowStartupLocation = WindowStartupLocation.Manual; target.Left = -3000; target.Top = 0; target.Show();
@@ -155,6 +164,31 @@ namespace ZapretGui
             var t = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(page == "diag" ? 4000 : 900) };
             t.Tick += delegate { t.Stop(); Save(target, path); Application.Current.Shutdown(); };
             t.Start();
+        }
+
+        // Выдуманные записи статистики за месяц — только для снимка окна.
+        static System.Collections.Generic.List<StatRec> DemoStats(DateTime from)
+        {
+            var list = new System.Collections.Generic.List<StatRec>();
+            var rnd = new Random(7);
+            DateTime now = DateTime.Now;
+            for (DateTime t = DateTime.Today.AddDays(-29); t < now; t = t.AddMinutes(1))
+            {
+                if (t < from) continue;
+                int h = t.Hour, day = (now.Date - t.Date).Days;
+                if (h >= 2 && h < 9) continue;                          // ПК выключен ночью
+                if (day % 6 == 3 && h >= 13 && h < 17) continue;        // иногда днём тоже
+                bool on = !(h >= 9 && h < 10);                           // утром обход включают не сразу
+                string strat = day > 2 ? "general (ALT)" : (h < 15 ? "general (ALT)" : "general (FAKE TLS AUTO ALT3)");
+                var r = new StatRec { T = t, On = on, Strategy = on ? strat : "", YtMax = 3, DcMax = 3, Yt = 3, Dc = 3,
+                    YtMs = 90 + rnd.Next(80), DcMs = 70 + rnd.Next(60) };
+                if (!on) { r.Yt = 0; r.Dc = 2; r.YtMs = -1; }
+                else if (strat == "general (ALT)" && h >= 19 && h < 22 && rnd.Next(4) > 0) { r.Yt = rnd.Next(3) == 0 ? 1 : 0; r.YtMs = r.Yt > 0 ? 300 : -1; }
+                else if (rnd.Next(400) == 0) r.Dc = 2;
+                if (day == 0 && h == 12 && t.Minute < 8) { r.Net = false; r.Yt = 0; r.Dc = 0; r.YtMs = r.DcMs = -1; }
+                list.Add(r);
+            }
+            return list;
         }
 
         static void Save(Window win, string path)

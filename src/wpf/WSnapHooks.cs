@@ -17,6 +17,14 @@ namespace ZapretGui
                 lastNetMs = new long[] { 120, 98, 140, 88, 101, 95 };
                 lastNet = DateTime.Now;
             }
+            if (Environment.GetEnvironmentVariable("ZAPRETGUI_SNAP_NET") == "bad")
+            {
+                netYt = 0; netDc = 1;
+                lastNetMs = new long[] { -1, -1, -1, 88, 101, 95 };
+                lastNet = DateTime.Now;
+            }
+            string on = Environment.GetEnvironmentVariable("ZAPRETGUI_SNAP_ON");
+            if (on != null) { running = on == "1"; activeStrategy = running ? selected : null; power.SetOn(running, false); }
             if (Environment.GetEnvironmentVariable("ZAPRETGUI_SNAP_PICK") == "1") { busy = true; picking = true; pickProgress = 0.62; busyText = "Подбор 12 / 18"; pickName = "general (FAKE TLS AUTO)"; }
             UpdateUi();
         }

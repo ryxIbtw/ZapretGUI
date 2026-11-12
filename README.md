@@ -17,9 +17,13 @@ GUI by **ryxIbtw**.
 
 ![Тёмная и светлая тема](docs/screenshots.png)
 
-**Главный экран**
-- Большая кнопка включает и выключает обход. `winws.exe` работает в фоне, консольных окон нет. Когда обход включён, за кнопкой светится мягкое пятно цвета акцента, а при включении от неё расходится кольцо. Во время подбора вокруг кнопки заполняется кольцо прогресса.
+**Главный экран — всё на одной панели**
+- Кнопка включает и выключает обход. `winws.exe` работает в фоне, консольных окон нет. Во время подбора вокруг кнопки заполняется кольцо прогресса.
+- Рядом крупно и обычными словами написано, что происходит: «Обход работает», «YouTube не открывается» с подсказкой, что делать, «Нет интернета», «Обход выключен».
 - Плашки **YouTube** и **Discord** раз в минуту проверяют, открываются ли сайты, и показывают «3/3 · 124 мс». Цвет плашки: зелёный — работает, жёлтый — частично, красный — нет. Клик по плашке проверяет сразу.
+- Полоса **«Сегодня»** показывает, когда за день были сбои. Клик открывает статистику.
+- Плитки-переключатели: запуск обхода с Windows, сторож, игровой фильтр, IPSet. Внизу кнопки «Списки», «Диагностика», «Журнал», «Ещё».
+- **Статистика**: полосы за сегодня, неделю или месяц — когда YouTube и Discord работали, а когда нет, и на какой стратегии; процент времени без сбоев и таблица по стратегиям. Если не открывается вообще ничего, программа проверяет обычный сайт и помечает такое время как «нет сети», а не как сбой стратегии. Данные хранятся 30 дней в `%APPDATA%\ZapretGUI\stats.tsv`.
 - **Стратегия**: стрелки ‹ › или колесо мыши, клик по названию открывает список. Если обход включён, он сразу перезапускается с новой стратегией.
 - **Подобрать стратегию** проверяет стратегии так же, как «Run Tests» в `service.bat` у Flowseal. Можно выбрать режим и стратегии:
   - **обычный** — сайты из `utils\targets.txt`, каждый по HTTP, TLS 1.2 и TLS 1.3 через `curl`, плюс пинг;
@@ -27,7 +31,7 @@ GUI by **ryxIbtw**.
 
   Лучшая — у которой больше всего успешных проверок, при равенстве больше ответов на пинг. В конце таблица от лучшей к худшей с кнопкой «Применить», колонка «История» с прошлыми подборами и отчёт в `utils\test results\` в формате Flowseal. Отменить можно кнопкой питания. Таблицу последнего подбора можно открыть через «Ещё».
 - **Автозапуск обхода с Windows** (служба), **игровой фильтр** с портами, **IPSet**.
-- **Ещё**: свои списки доменов и исключений, журнал событий, диагностика, классическое меню `service.bat`.
+- **Ещё**: свои списки доменов и исключений, статистика, журнал событий, диагностика, классическое меню `service.bat`.
 - **Редактор списков**: свои домены, исключения и IP-исключения редактируются прямо в программе: добавить (можно сразу несколько, ссылки вида `https://site.com/...` сами превращаются в домен), удалить, поиск. Кириллические домены переводятся в нужный zapret вид (punycode). При желании список можно открыть в Блокноте.
 
 **Значок в трее**
@@ -43,7 +47,7 @@ GUI by **ryxIbtw**.
 - Вопросы и предупреждения показываются в стиле программы, а не стандартными окнами Windows.
 - Запуск программы с Windows сразу в трей, через планировщик, без запроса UAC.
 - Крестик сворачивает в трей или закрывает программу.
-- **Сторож** перезапускает обход, если `winws.exe` упал (не больше 3 раз за 5 минут).
+- **Сторож** (плитка на главном экране) перезапускает обход, если `winws.exe` упал (не больше 3 раз за 5 минут).
 - **Диагностика** проверяет BFE, прокси, VPN, AdGuard, Killer, Check Point, SmartByte, DNS, путь установки, драйвер, hosts и другие программы обхода. Найденные проблемы исправляются кнопкой, кэш Discord очищается в один клик.
 - **Fake-файлы** для Discord UDP и игрового фильтра.
 - **Обновления**: ZapretGUI обновляет сам себя из релизов этого репозитория (скачивает новый exe и перезапускается, обход при этом продолжает работать). Перед установкой сверяется контрольная сумма SHA256 из релиза. Там же включается проверка обновлений при запуске.
@@ -79,7 +83,7 @@ A minimal GUI for [zapret-discord-youtube](https://github.com/Flowseal/zapret-di
 
 Put `ZapretGUI.exe` next to `service.bat` in your zapret folder and run it (administrator rights are required by WinDivert).
 
-Features: one-button on/off with glow and progress ring, live YouTube/Discord availability cards, automatic strategy finder, Windows autostart (service), game filter, IPSet, watchdog, built-in diagnostics with one-click fixes, fake file switcher, one-click zapret update that keeps your lists and settings, built-in list editor, event log, settings backup/restore, self-update with SHA256 verification, tray mode, dark/light/AMOLED/warm themes with accent colors and 75–125% UI scale, Russian/English UI.
+Features: dashboard main screen with a plain-language status, one-button on/off with a progress ring, live YouTube/Discord availability cards, availability statistics by day/week/month and by strategy, automatic strategy finder, Windows autostart (service), game filter, IPSet, watchdog, built-in diagnostics with one-click fixes, fake file switcher, one-click zapret update that keeps your lists and settings, built-in list editor, event log, settings backup/restore, self-update with SHA256 verification, tray mode, dark/light/AMOLED/warm themes with accent colors and 75–125% UI scale, Russian/English UI.
 
 Each release ships `ZapretGUI.exe.sha256`; compare it with `Get-FileHash ZapretGUI.exe` or the About window.
 
