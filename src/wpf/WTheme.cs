@@ -101,7 +101,9 @@ namespace ZapretGui
       <ControlTemplate TargetType='ContextMenu'>
         <Border Background='{DynamicResource Surface}' BorderBrush='{DynamicResource Line}' BorderThickness='1' CornerRadius='9' Padding='4' Margin='0,0,6,6'>
           <Border.Effect><DropShadowEffect BlurRadius='14' ShadowDepth='3' Opacity='0.35'/></Border.Effect>
-          <StackPanel IsItemsHost='True' KeyboardNavigation.DirectionalNavigation='Cycle'/>
+          <ScrollViewer VerticalScrollBarVisibility='Auto' HorizontalScrollBarVisibility='Disabled' CanContentScroll='False'>
+            <StackPanel IsItemsHost='True' KeyboardNavigation.DirectionalNavigation='Cycle'/>
+          </ScrollViewer>
         </Border>
       </ControlTemplate>
     </Setter.Value></Setter>

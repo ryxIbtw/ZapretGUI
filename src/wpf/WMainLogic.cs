@@ -540,7 +540,16 @@ namespace ZapretGui
                 string name = s;
                 WMenu.Add(m, name, name == selected, () => SelectStrategy(name));
             }
-            m.MaxHeight = 420;
+            m.MaxHeight = 420;   // длиннее — с прокруткой
+            m.Opened += delegate
+            {
+                // сразу показать выбранную стратегию, даже если она внизу списка
+                foreach (var it in m.Items)
+                {
+                    var mi = it as System.Windows.Controls.MenuItem;
+                    if (mi != null && mi.IsChecked) { mi.BringIntoView(); break; }
+                }
+            };
             if (above) WMenu.ShowAbove(m, anchor); else WMenu.ShowBelow(m, anchor);
             return m;
         }
@@ -722,6 +731,7 @@ namespace ZapretGui
             WMenu.Add(m, L.T("Классическое меню (service.bat)", "Classic menu (service.bat)"), false, OpenServiceBat);
             WMenu.Add(m, L.T("Открыть папку zapret", "Open zapret folder"), false, () => Shell("explorer.exe", "\"" + z.Root + "\""));
             WMenu.Add(m, L.T("Страница zapret на GitHub", "zapret on GitHub"), false, () => Shell(AboutW.ZapretUrl, null));
+            WMenu.Add(m, L.T("Страница ZapretGUI на GitHub", "ZapretGUI on GitHub"), false, () => Shell(AboutW.RepoUrl, null));
             WMenu.Sep(m);
             WMenu.Add(m, L.T("Сообщить о проблеме", "Report a problem"), false, ShowReport);
             WMenu.ShowAbove(m, anchor);

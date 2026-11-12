@@ -127,7 +127,8 @@ namespace ZapretGui
                 CheckNet();
                 if (z.UpdatesEnabled) CheckUpdates();
                 CheckStrategyChanges();   // zapret обновили, пока программы не было? — покажем, когда окно появится
-                ContentRendered += delegate { Dispatcher.BeginInvoke((Action)ShowWhatsNew); };
+                CheckGuiUpdated();        // сама программа обновилась — покажем описание релиза
+                ContentRendered += delegate { Dispatcher.BeginInvoke((Action)ShowPendingNews); };
             }
             new WindowInteropHelper(this).EnsureHandle();   // окно существует даже при запуске в трее
         }
@@ -458,7 +459,7 @@ namespace ZapretGui
             Show();
             if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
             Activate();
-            if (pendingWhatsNew != null) Dispatcher.BeginInvoke((Action)ShowWhatsNew);
+            if (pendingWhatsNew != null || pendingGuiNews != null) Dispatcher.BeginInvoke((Action)ShowPendingNews);
         }
 
         IntPtr WndProc(IntPtr hwnd, int msg, IntPtr w, IntPtr l, ref bool handled)

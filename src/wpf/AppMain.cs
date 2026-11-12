@@ -14,8 +14,8 @@ using WF = System.Windows.Forms;
 [assembly: AssemblyCompany("ryxIbtw")]
 [assembly: AssemblyCopyright("© ryxIbtw")]
 [assembly: AssemblyDescription("Интерфейс для zapret-discord-youtube by Flowseal. GUI by ryxIbtw")]
-[assembly: AssemblyVersion("2.3.0.0")]
-[assembly: AssemblyFileVersion("2.3.0.0")]
+[assembly: AssemblyVersion("2.3.1.0")]
+[assembly: AssemblyFileVersion("2.3.1.0")]
 
 namespace ZapretGui
 {
@@ -132,6 +132,8 @@ namespace ZapretGui
             else if (page == "whatsnew")
                 target = new WhatsNewW(w, "1.10.4", "1.10.5", new System.Collections.Generic.List<string> { "general (ALT12)", "general (FAKE TLS AUTO ALT4)" },
                     new System.Collections.Generic.List<string> { "general (ALT3)" });
+            else if (page == "guinews")
+                target = new GuiNewsW(w, "2.3.0", File.ReadAllText(Environment.GetEnvironmentVariable("ZAPRETGUI_SNAP_NOTES")));
             else if (page == "report") target = new ReportW(w, () => "ZapretGUI v2.2.0  ·  zapret v1.10.4  ·  Windows 11 25H2 (build 26300.1)\r\nОбход: включён  ·  стратегия: general (ALT)");
             else if (page == "editor")
             {

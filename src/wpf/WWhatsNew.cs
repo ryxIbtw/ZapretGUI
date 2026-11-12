@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -66,8 +67,92 @@ namespace ZapretGui
         }
     }
 
+    // «Что нового в ZapretGUI»: описание релиза с GitHub после самообновления.
+    class GuiNewsW : WinBase
+    {
+        public GuiNewsW(Window owner, string version, string markdown) : base(L.T("Что нового в ZapretGUI", "What's new in ZapretGUI"), owner)
+        {
+            var sp = new StackPanel { Width = 460, Margin = new Thickness(22, 18, 22, 18) };
+            sp.Children.Add(W.T(L.T("Что нового в ZapretGUI v", "What's new in ZapretGUI v") + version, W.Title, W.Text, true));
+            var lead = W.T(L.T("Программа обновилась. Вот что изменилось.", "The app has been updated. Here is what changed."), W.Small, W.Muted);
+            lead.Margin = new Thickness(0, 4, 0, 10);
+            sp.Children.Add(lead);
+            var body = new StackPanel();
+            bool skip = false;
+            foreach (string raw in (markdown ?? "").Replace("\r", "").Split('\n'))
+            {
+                string line = raw.Trim();
+                if (line == "---") break;   // дальше — английский кратко
+                string text = line.Replace("**", "").Replace("`", "");
+                if (line.StartsWith("#"))
+                {
+                    string head = text.TrimStart('#', ' ');
+                    skip = head == "Установка" || head == "Installation";   // как обновиться — уже не нужно
+                    if (skip) continue;
+                }
+                if (line == "" || skip) continue;
+                if (line.StartsWith("#"))
+                {
+                    var h = W.T(text.TrimStart('#', ' '), W.Caption, W.Muted, true);
+                    h.Margin = new Thickness(2, body.Children.Count == 0 ? 2 : 12, 0, 4);
+                    body.Children.Add(h);
+                    continue;
+                }
+                bool bullet = text.StartsWith("- ") || text.StartsWith("* ");
+                if (bullet) text = text.Substring(2);
+                var row = new Grid { Margin = new Thickness(0, 3, 0, 3) };
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(bullet ? 16 : 0) });
+                row.ColumnDefinitions.Add(new ColumnDefinition());
+                if (bullet) row.Children.Add(new Border { Width = 6, Height = 6, CornerRadius = new CornerRadius(3), Background = W.Accent, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(2, 7, 0, 0) });
+                var t = W.T(text, W.Body, W.Text); t.TextWrapping = TextWrapping.Wrap; t.TextTrimming = TextTrimming.None;
+                Grid.SetColumn(t, 1); row.Children.Add(t);
+                body.Children.Add(row);
+            }
+            var card = new Border { Background = W.Surface, CornerRadius = new CornerRadius(14), Padding = new Thickness(16, 10, 16, 12),
+                Child = new ScrollViewer { Content = body, MaxHeight = 380, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled } };
+            sp.Children.Add(card);
+            var bar = new Grid { Margin = new Thickness(0, 16, 0, 0) };
+            var gh = new FlatLink(L.T("Открыть на GitHub", "Open on GitHub")) { HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center };
+            gh.Click += delegate { try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(AboutW.RepoUrl + "/releases/tag/v" + version) { UseShellExecute = true }); } catch { } };
+            bar.Children.Add(gh);
+            var ok = new Pill(L.T("Понятно", "Got it")) { MinWidth = 120, HorizontalAlignment = HorizontalAlignment.Right };
+            ok.Click += delegate { Close(); };
+            bar.Children.Add(ok);
+            sp.Children.Add(bar);
+            Root.Child = sp;
+        }
+    }
+
     partial class MainWindow
     {
+        Tuple<string, string> pendingGuiNews;
+
+        // Первый запуск новой версии ZapretGUI — взять описание релиза с GitHub и показать.
+        internal void CheckGuiUpdated()
+        {
+            if (snapPath != null) return;
+            var cur = SelfUpdate.Current;
+            string last = Prefs.Get("LastVersion", null);
+            Prefs.Set("LastVersion", cur.ToString(3));
+            // версии до 2.3.1 этого не запоминали: если программой уже пользовались — значит, обновились
+            bool updated = last == null ? Prefs.Get("WelcomeShown", "0") == "1" : SelfUpdate.Parse(last) < cur;
+            if (!updated) return;
+            ThreadPool.QueueUserWorkItem(delegate
+            {
+                string notes = SelfUpdate.ReleaseNotes(cur);
+                if (string.IsNullOrEmpty(notes)) return;
+                Post(() => { pendingGuiNews = Tuple.Create(cur.ToString(3), notes); if (IsVisible) ShowGuiNews(); });
+            });
+        }
+
+        internal void ShowGuiNews()
+        {
+            var p = pendingGuiNews;
+            if (p == null || busy) return;
+            pendingGuiNews = null;
+            new GuiNewsW(this, p.Item1, p.Item2).ShowDialog();
+        }
+
         Tuple<string, string, List<string>, List<string>> pendingWhatsNew;
 
         // Сравнивает стратегии с прошлым запуском. Если сменилась версия zapret и список стратегий — покажет «Что нового».
@@ -89,6 +174,8 @@ namespace ZapretGui
             pendingWhatsNew = Tuple.Create(kv, ver, added, removed);
             if (IsVisible) ShowWhatsNew();
         }
+
+        void ShowPendingNews() { ShowGuiNews(); ShowWhatsNew(); }
 
         internal void ShowWhatsNew()
         {

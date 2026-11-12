@@ -171,6 +171,40 @@ namespace ZapretGui
             return Parse(tag.Groups[1].Value);
         }
 
+        // Описание релиза версии v с GitHub (Markdown). null — не удалось получить.
+        public static string ReleaseNotes(Version v)
+        {
+            try
+            {
+                string json = Zapret.Download("https://api.github.com/repos/ryxIbtw/ZapretGUI/releases/tags/v" + v.ToString(3), 10000);
+                var m = System.Text.RegularExpressions.Regex.Match(json, "\"body\"\\s*:\\s*\"((?:\\\\.|[^\"\\\\])*)\"");
+                return m.Success ? JsonUnescape(m.Groups[1].Value) : null;
+            }
+            catch { return null; }
+        }
+
+        static string JsonUnescape(string s)
+        {
+            var sb = new StringBuilder(s.Length);
+            for (int i = 0; i < s.Length; i++)
+            {
+                char c = s[i];
+                if (c != '\\' || i + 1 >= s.Length) { sb.Append(c); continue; }
+                char n = s[++i];
+                switch (n)
+                {
+                    case 'n': sb.Append('\n'); break;
+                    case 'r': break;
+                    case 't': sb.Append('\t'); break;
+                    case 'u':
+                        if (i + 4 < s.Length) { sb.Append((char)Convert.ToInt32(s.Substring(i + 1, 4), 16)); i += 4; }
+                        break;
+                    default: sb.Append(n); break;   // \" \\ \/
+                }
+            }
+            return sb.ToString();
+        }
+
         // SHA256 в виде 64 шестнадцатеричных символов в нижнем регистре.
         public static string Sha256(byte[] data)
         {
