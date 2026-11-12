@@ -22,7 +22,10 @@ GUI by **ryxIbtw**.
 - Рядом крупно и обычными словами написано, что происходит: «Обход работает», «YouTube не открывается» с подсказкой, что делать, «Нет интернета», «Обход выключен».
 - Плашки **YouTube** и **Discord** раз в минуту проверяют, открываются ли сайты, и показывают «3/3 · 124 мс». Цвет плашки: зелёный — работает, жёлтый — частично, красный — нет. Клик по плашке проверяет сразу.
 - Полоса **«Сегодня»** показывает, когда за день были сбои. Клик открывает статистику.
-- Плитки-переключатели: запуск обхода с Windows, сторож, игровой фильтр, IPSet. Внизу кнопки «Списки», «Диагностика», «Журнал», «Ещё».
+- Плитки-переключатели: по умолчанию запуск обхода с Windows, сторож, игровой фильтр, IPSet. Какие плитки показывать (от 0 до 6), выбирается в настройках; убранное с панели остаётся в настройках. Внизу кнопки «Списки», «Диагностика», «Журнал», «Ещё».
+- **Простой режим**: только большая кнопка и статус — удобно, если ставите программу родителям или друзьям. Включается в настройках.
+- **Что нового в zapret**: после обновления zapret (через программу или вручную) программа показывает, какие стратегии появились и какие убраны, и предлагает проверить новые.
+- **Сообщить о проблеме**: открывает новую issue на GitHub с описанием, сведениями о системе и журналом (путь к папке пользователя скрыт). Отправляете вы сами.
 - **Статистика**: полосы за сегодня, неделю или месяц — когда YouTube и Discord работали, а когда нет, и на какой стратегии; процент времени без сбоев и таблица по стратегиям. Если не открывается вообще ничего, программа проверяет обычный сайт и помечает такое время как «нет сети», а не как сбой стратегии. Данные хранятся 30 дней в `%APPDATA%\ZapretGUI\stats.tsv`.
 - **Стратегия**: стрелки ‹ › или колесо мыши, клик по названию открывает список. Если обход включён, он сразу перезапускается с новой стратегией.
 - **Подобрать стратегию** проверяет стратегии так же, как «Run Tests» в `service.bat` у Flowseal. Можно выбрать режим и стратегии:
@@ -83,7 +86,7 @@ A minimal GUI for [zapret-discord-youtube](https://github.com/Flowseal/zapret-di
 
 Put `ZapretGUI.exe` next to `service.bat` in your zapret folder and run it (administrator rights are required by WinDivert).
 
-Features: dashboard main screen with a plain-language status, one-button on/off with a progress ring, live YouTube/Discord availability cards, availability statistics by day/week/month and by strategy, automatic strategy finder, Windows autostart (service), game filter, IPSet, watchdog, built-in diagnostics with one-click fixes, fake file switcher, one-click zapret update that keeps your lists and settings, built-in list editor, event log, settings backup/restore, self-update with SHA256 verification, tray mode, dark/light/AMOLED/warm themes with accent colors and 75–125% UI scale, Russian/English UI.
+Features: dashboard main screen with a plain-language status, one-button on/off with a progress ring, live YouTube/Discord availability cards, availability statistics by day/week/month and by strategy, customizable tiles, simple mode (just the button), "what's new in zapret" after updates, one-click GitHub issue reports, automatic strategy finder, Windows autostart (service), game filter, IPSet, watchdog, built-in diagnostics with one-click fixes, fake file switcher, one-click zapret update that keeps your lists and settings, built-in list editor, event log, settings backup/restore, self-update with SHA256 verification, tray mode, dark/light/AMOLED/warm themes with accent colors and 75–125% UI scale, Russian/English UI.
 
 Each release ships `ZapretGUI.exe.sha256`; compare it with `Get-FileHash ZapretGUI.exe` or the About window.
 

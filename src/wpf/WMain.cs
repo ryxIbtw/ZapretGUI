@@ -17,7 +17,8 @@ namespace ZapretGui
 {
     partial class MainWindow : Window
     {
-        public const double Wd = 600, Ht = 618;
+        double Wd { get { return simple ? 380 : 600; } }
+        double Ht { get { return simple ? 624 : 474 + 72 * TileRows; } }   // 2 ряда плиток — 618
         readonly Zapret z;
         readonly string snapPath;
         bool startHidden;
@@ -125,6 +126,8 @@ namespace ZapretGui
                 });
                 CheckNet();
                 if (z.UpdatesEnabled) CheckUpdates();
+                CheckStrategyChanges();   // zapret обновили, пока программы не было? — покажем, когда окно появится
+                ContentRendered += delegate { Dispatcher.BeginInvoke((Action)ShowWhatsNew); };
             }
             new WindowInteropHelper(this).EnsureHandle();   // окно существует даже при запуске в трее
         }
@@ -153,6 +156,8 @@ namespace ZapretGui
 
         void BuildUi()
         {
+            LoadLayoutPrefs();
+            cardYt = cardDc = null; picker = null; todayBar = null;
             var root = new Grid { Width = Wd, Height = Ht, Background = W.Bg, LayoutTransform = rootScale };
             rootScale.ScaleX = rootScale.ScaleY = Theme.UiScale;
             root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
@@ -186,7 +191,8 @@ namespace ZapretGui
             root.Children.Add(pages);
             mainPage = Page(); settingsPage = Page(); welcomePage = Page();
             pages.Children.Add(mainPage); pages.Children.Add(settingsPage); pages.Children.Add(welcomePage);
-            BuildPanelPage();
+            CreateRows();
+            if (simple) BuildSimplePage(); else BuildPanelPage();
             BuildSettingsPage();
             BuildWelcomePage();
 
@@ -230,36 +236,32 @@ namespace ZapretGui
                 t.Margin = new Thickness(6, sp.Children.Count == 0 ? 2 : 12, 0, 6);
                 sp.Children.Add(t);
             };
-            double rh = 48;
-            rowLang = new SettingRowW(L.T("Язык", "Language"), false, "globe", "", false, rh);
-            rowTheme = new SettingRowW(L.T("Оформление", "Appearance"), false, "palette", "", false, rh);
-            rowGuiStart = new SettingRowW(L.T("Запускать программу с Windows", "Launch app with Windows"), true, "monitor", L.T("сразу свёрнутой в трей", "minimized to tray"), false, rh);
-            rowTray = new SettingRowW(L.T("Крестик сворачивает в трей", "Close button hides to tray"), true, "tray", L.T("закрыть полностью — через значок в трее", "quit via the tray icon"), false, rh);
-            rowFakes = new SettingRowW(L.T("Fake-файлы", "Fake files"), false, "layers", L.T("подмена пакетов для Discord и игр", "fake packets for Discord and games"), false, rh);
-            rowDiag = new SettingRowW(L.T("Диагностика", "Diagnostics"), false, "wrench", L.T("конфликты, прокси, DNS, драйвер", "conflicts, proxy, DNS, driver"), true, rh);
-            rowUpdate = new SettingRowW(L.T("Обновления", "Updates"), false, "download", "", false, rh);
-            rowLang.Click += delegate { ShowLangMenu(); };
-            rowTheme.Click += delegate { ShowThemeMenu(); };
-            rowGuiStart.Click += delegate { ToggleGuiAutostart(); };
-            rowTray.Click += delegate { CloseToTray = !CloseToTray; UpdateUi(); };
-            rowDiag.Click += delegate { OpenDiag(); };
-            rowFakes.Click += delegate { ShowFakesMenu(); };
-            rowUpdate.Click += delegate { ShowUpdatesMenu(); };
-
+            // строки, которые не стоят плитками на панели, — здесь
+            Func<string, bool> here = k => !tiles.Contains(k);
             group(L.T("Основное", "General"));
-            var c1 = new CardBox(); c1.Add(rowLang); c1.Add(rowTheme); c1.Add(rowGuiStart); c1.Add(rowTray); sp.Children.Add(c1);
+            var c1 = new CardBox(); c1.Add(rowLang); c1.Add(rowTheme); c1.Add(rowSimple);
+            if (!simple) c1.Add(rowTiles);
+            if (here("guistart")) c1.Add(rowGuiStart);
+            if (here("tray")) c1.Add(rowTray);
+            sp.Children.Add(c1);
             group(L.T("Обход", "Bypass"));
-            var c2 = new CardBox(); c2.Add(rowFakes); sp.Children.Add(c2);
+            var c2 = new CardBox();
+            foreach (string k in new[] { "auto", "watch", "game", "ipset" }) if (here(k)) c2.Add(RowFor(k));
+            c2.Add(rowFakes);
+            sp.Children.Add(c2);
             group(L.T("Обслуживание", "Maintenance"));
             var c3 = new CardBox(); c3.Add(rowDiag); c3.Add(rowUpdate); sp.Children.Add(c3);
 
             var foot = Footer(
                 Tuple.Create<string, Action<FlatLink>>(L.T("Журнал событий", "Event log"), l => ShowJournal()),
                 Tuple.Create<string, Action<FlatLink>>(L.T("Резервная копия", "Backup"), l => ShowBackupMenu(l)),
-                Tuple.Create<string, Action<FlatLink>>(L.T("О программе", "About"), l => ShowAbout()));
-            foot.Margin = new Thickness(0, 14, 0, 0);
+                Tuple.Create<string, Action<FlatLink>>(L.T("О программе", "About"), l => ShowAbout()),
+                Tuple.Create<string, Action<FlatLink>>(L.T("Сообщить о проблеме", "Report a problem"), l => ShowReport()));
+            foot.Margin = new Thickness(0, 14, 0, 12);
             sp.Children.Add(foot);
-            settingsPage.Children.Add(sp);
+            // настроек может быть больше, чем помещается, — с прокруткой
+            var scroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, Content = sp };
+            settingsPage.Children.Add(scroll);
         }
 
         // Экран приветствия при первом запуске.
@@ -456,6 +458,7 @@ namespace ZapretGui
             Show();
             if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
             Activate();
+            if (pendingWhatsNew != null) Dispatcher.BeginInvoke((Action)ShowWhatsNew);
         }
 
         IntPtr WndProc(IntPtr hwnd, int msg, IntPtr w, IntPtr l, ref bool handled)

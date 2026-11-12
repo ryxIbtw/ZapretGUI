@@ -94,9 +94,14 @@ namespace ZapretGui
             power.SetProgress(picking ? pickProgress : -1);
             power.SetText(statusText, statusBrush, subText);
             UpdatePanel();
-            cardYt.Set(netYt, netChecking, NetMeta(0, NetCheck.YouTube.Length));
-            cardDc.Set(netDc, netChecking, NetMeta(NetCheck.YouTube.Length, NetCheck.Discord.Length));
-            picker.SetValue(selected);
+            if (cardYt != null)   // в простом режиме плашек и стратегии нет
+            {
+                cardYt.Set(netYt, netChecking, NetMeta(0, NetCheck.YouTube.Length));
+                cardDc.Set(netDc, netChecking, NetMeta(NetCheck.YouTube.Length, NetCheck.Discord.Length));
+            }
+            if (picker != null) picker.SetValue(selected);
+            rowSimple.Checked = simple;
+            rowTiles.Value = tiles.Count + L.T(" из ", " of ") + TileKeys.Length;
             rowAuto.Checked = autostart;
             rowGame.Value = GameLabel(z.GameMode);
             rowIpset.Value = IpsetLabel(z.IpsetMode());
@@ -208,7 +213,7 @@ namespace ZapretGui
             Journal.Add(L.T("Стратегия сменена: ", "Strategy changed: ") + selected + " → " + name);
             selected = name;
             Prefs.Set("Strategy", name);
-            picker.SetValue(name);
+            if (picker != null) picker.SetValue(name);
             RestartIfActive();
             SyncFlyout();
         }
@@ -376,7 +381,9 @@ namespace ZapretGui
 
         // ---------- Автоподбор стратегии ----------
 
-        void AutoPick()
+        void AutoPick() { AutoPick(null); }
+
+        void AutoPick(List<string> preselect)
         {
             if (busy) return;
             strategies = z.Strategies();
@@ -384,7 +391,7 @@ namespace ZapretGui
             if (!FlowTest.CurlAvailable) { Toast(L.T("Не найден curl.exe — он нужен для проверок", "curl.exe not found — it is needed for the checks"), true); return; }
             FlowTest.RestoreLeftoverIpset(z);   // прошлый тест DPI прервался — вернуть IPSet
             var targets = FlowTest.LoadTargets(z);
-            var setup = new PickSetupW(this, strategies, targets.Count, FlowTest.TargetsFromFile(z));
+            var setup = new PickSetupW(this, strategies, targets.Count, FlowTest.TargetsFromFile(z), preselect);
             setup.ShowDialog();
             if (setup.Mode == null) return;
             var list = setup.Selected;
@@ -715,6 +722,8 @@ namespace ZapretGui
             WMenu.Add(m, L.T("Классическое меню (service.bat)", "Classic menu (service.bat)"), false, OpenServiceBat);
             WMenu.Add(m, L.T("Открыть папку zapret", "Open zapret folder"), false, () => Shell("explorer.exe", "\"" + z.Root + "\""));
             WMenu.Add(m, L.T("Страница zapret на GitHub", "zapret on GitHub"), false, () => Shell(AboutW.ZapretUrl, null));
+            WMenu.Sep(m);
+            WMenu.Add(m, L.T("Сообщить о проблеме", "Report a problem"), false, ShowReport);
             WMenu.ShowAbove(m, anchor);
         }
 
@@ -750,6 +759,7 @@ namespace ZapretGui
 
         void ShowJournal() { new JournalW(this, JournalHeader).ShowDialog(); }
         void ShowStats() { new StatsW(this, Stats.Load).ShowDialog(); }
+        void ShowReport() { new ReportW(this, JournalHeader).ShowDialog(); }
 
         // Сведения о системе в начале скопированного журнала.
         string JournalHeader()
@@ -1005,6 +1015,7 @@ namespace ZapretGui
                         Journal.Add(L.T("zapret обновлён: v", "zapret updated: v") + local + " → v" + z.LocalVersion);
                         Toast(L.T("zapret обновлён до v", "zapret updated to v") + z.LocalVersion);
                         CheckNetSoon();
+                        CheckStrategyChanges();
                     });
                 });
             });

@@ -2,6 +2,7 @@
 // главные переключатели плитками и кнопки разделов — всё на одном экране.
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -114,30 +115,20 @@ namespace ZapretGui
             today.Child = tg;
             sp.Children.Add(today);
 
-            // --- переключатели плитками ---
-            rowAuto = new SettingRowW(L.T("Запуск с Windows", "Start with Windows"), true, "power", L.T("обход включится сам", "bypass turns on by itself"), false, 54);
-            rowWatch = new SettingRowW(L.T("Сторож", "Watchdog"), true, "shield", L.T("перезапуск, если обход упал", "restart if the bypass crashes"), false, 54);
-            rowGame = new SettingRowW(L.T("Игровой фильтр", "Game filter"), false, "monitor", L.T("для онлайн-игр", "for online games"), false, 54);
-            rowIpset = new SettingRowW("IPSet", false, "globe", L.T("обход по IP-адресам", "bypass by IP address"), false, 54);
-            rowAuto.Click += delegate { ToggleAutostart(); };
-            rowWatch.Click += delegate
+            // --- переключатели плитками (какие — выбирается в настройках) ---
+            var grid = new UniformGrid { Columns = 2, Margin = new Thickness(-5, 5, -5, 0) };
+            foreach (string key in tiles)
             {
-                WatchdogOn = !WatchdogOn; UpdateUi();
-                Journal.Add(WatchdogOn ? L.T("Сторож включён", "Watchdog on") : L.T("Сторож выключен", "Watchdog off"));
-            };
-            rowGame.Click += delegate { ShowGameMenu(); };
-            rowIpset.Click += delegate { ShowIpsetMenu(); };
-            var tiles = new UniformGrid { Columns = 2, Margin = new Thickness(-5, 5, -5, 0) };
-            foreach (var r in new[] { rowAuto, rowWatch, rowGame, rowIpset })
-            {
+                var r = RowFor(key);
+                r.Height = 54;
                 var box = new CardBox { Margin = new Thickness(5) };
                 box.Add(r);
-                tiles.Children.Add(box);
+                grid.Children.Add(box);
             }
-            sp.Children.Add(tiles);
+            if (tiles.Count > 0) sp.Children.Add(grid);
 
             // --- разделы ---
-            var acts = new UniformGrid { Columns = 4, Margin = new Thickness(-5, 5, -5, 0) };
+            var acts = new UniformGrid { Columns = 4, Margin = new Thickness(-5, tiles.Count > 0 ? 5 : 10, -5, 0) };
             ActionTile lists = null, more = null;
             Action<ActionTile, Action> add = (t, a) => { t.Margin = new Thickness(5); t.Click += delegate { a(); }; acts.Children.Add(t); };
             lists = new ActionTile("list", L.T("Списки", "Lists"));
@@ -150,6 +141,142 @@ namespace ZapretGui
 
             mainPage.Children.Add(sp);
             RefreshToday();
+        }
+
+        // ---------- Свои плитки и простой режим ----------
+
+        public static readonly string[] TileKeys = { "auto", "watch", "game", "ipset", "guistart", "tray" };
+        const string DefaultTiles = "auto,watch,game,ipset";
+        bool simple;
+        List<string> tiles = new List<string>();
+        SettingRowW rowSimple, rowTiles;
+
+        void LoadLayoutPrefs()
+        {
+            simple = Prefs.Get("Simple", "0") == "1";
+            string t = Prefs.Get("Tiles", DefaultTiles);
+#if TESTHOOKS
+            if (snapPath != null)
+            {
+                simple = Environment.GetEnvironmentVariable("ZAPRETGUI_SNAP_SIMPLE") == "1";
+                t = Environment.GetEnvironmentVariable("ZAPRETGUI_SNAP_TILES") ?? DefaultTiles;
+            }
+#endif
+            tiles = new List<string>();
+            foreach (string k in t.Split(','))
+                if (Array.IndexOf(TileKeys, k.Trim()) >= 0 && !tiles.Contains(k.Trim())) tiles.Add(k.Trim());
+            if (simple) tiles.Clear();   // в простом режиме плиток нет — всё в настройках
+        }
+
+        int TileRows { get { return (tiles.Count + 1) / 2; } }
+
+        SettingRowW RowFor(string key)
+        {
+            switch (key)
+            {
+                case "auto": return rowAuto;
+                case "watch": return rowWatch;
+                case "game": return rowGame;
+                case "ipset": return rowIpset;
+                case "guistart": return rowGuiStart;
+                default: return rowTray;
+            }
+        }
+
+        // Все строки настроек создаются один раз; потом каждая попадает либо на панель плиткой, либо в настройки.
+        void CreateRows()
+        {
+            double rh = 48;
+            rowAuto = new SettingRowW(L.T("Обход с Windows", "Bypass with Windows"), true, "power", L.T("включится сам, как служба", "turns on by itself, as a service"), false, rh);
+            rowWatch = new SettingRowW(L.T("Сторож", "Watchdog"), true, "shield", L.T("перезапуск, если обход упал", "restart if the bypass crashes"), false, rh);
+            rowGame = new SettingRowW(L.T("Игровой фильтр", "Game filter"), false, "monitor", L.T("для онлайн-игр", "for online games"), false, rh);
+            rowIpset = new SettingRowW("IPSet", false, "globe", L.T("обход по IP-адресам", "bypass by IP address"), false, rh);
+            rowGuiStart = new SettingRowW(L.T("Программа с Windows", "App with Windows"), true, "monitor", L.T("сразу свёрнутой в трей", "minimized to tray"), false, rh);
+            rowTray = new SettingRowW(L.T("Крестик — в трей", "Close to tray"), true, "tray", L.T("выход — через значок в трее", "quit via the tray icon"), false, rh);
+            rowLang = new SettingRowW(L.T("Язык", "Language"), false, "globe", "", false, rh);
+            rowTheme = new SettingRowW(L.T("Оформление", "Appearance"), false, "palette", "", false, rh);
+            rowSimple = new SettingRowW(L.T("Простой режим", "Simple mode"), true, "power", L.T("только кнопка и статус", "just the button and status"), false, rh);
+            rowTiles = new SettingRowW(L.T("Плитки на главном экране", "Tiles on the main screen"), false, "layers", L.T("что показывать на панели", "what to show on the panel"), false, rh);
+            rowFakes = new SettingRowW(L.T("Fake-файлы", "Fake files"), false, "layers", L.T("подмена пакетов для Discord и игр", "fake packets for Discord and games"), false, rh);
+            rowDiag = new SettingRowW(L.T("Диагностика", "Diagnostics"), false, "wrench", L.T("конфликты, прокси, DNS, драйвер", "conflicts, proxy, DNS, driver"), true, rh);
+            rowUpdate = new SettingRowW(L.T("Обновления", "Updates"), false, "download", "", false, rh);
+
+            rowAuto.Click += delegate { ToggleAutostart(); };
+            rowWatch.Click += delegate
+            {
+                WatchdogOn = !WatchdogOn; UpdateUi();
+                Journal.Add(WatchdogOn ? L.T("Сторож включён", "Watchdog on") : L.T("Сторож выключен", "Watchdog off"));
+            };
+            rowGame.Click += delegate { ShowGameMenu(); };
+            rowIpset.Click += delegate { ShowIpsetMenu(); };
+            rowGuiStart.Click += delegate { ToggleGuiAutostart(); };
+            rowTray.Click += delegate { CloseToTray = !CloseToTray; UpdateUi(); };
+            rowLang.Click += delegate { ShowLangMenu(); };
+            rowTheme.Click += delegate { ShowThemeMenu(); };
+            rowSimple.Click += delegate { SetSimple(!simple); };
+            rowTiles.Click += delegate { ShowTilesMenu(); };
+            rowFakes.Click += delegate { ShowFakesMenu(); };
+            rowDiag.Click += delegate { OpenDiag(); };
+            rowUpdate.Click += delegate { ShowUpdatesMenu(); };
+        }
+
+        static string TileName(string key)
+        {
+            switch (key)
+            {
+                case "auto": return L.T("Обход с Windows", "Bypass with Windows");
+                case "watch": return L.T("Сторож", "Watchdog");
+                case "game": return L.T("Игровой фильтр", "Game filter");
+                case "ipset": return "IPSet";
+                case "guistart": return L.T("Программа с Windows", "App with Windows");
+                default: return L.T("Крестик — в трей", "Close to tray");
+            }
+        }
+
+        void ShowTilesMenu()
+        {
+            var m = WMenu.Create();
+            foreach (string key in TileKeys)
+            {
+                string k = key;
+                WMenu.Add(m, TileName(k), tiles.Contains(k), () =>
+                {
+                    var next = TileKeys.Where(x => x == k ? !tiles.Contains(k) : tiles.Contains(x)).ToList();   // порядок — как в списке
+                    Prefs.Set("Tiles", string.Join(",", next));
+                    RebuildLayout();
+                });
+            }
+            WMenu.Sep(m);
+            WMenu.Add(m, L.T("Как было по умолчанию", "Reset to default"), false, () => { Prefs.Set("Tiles", DefaultTiles); RebuildLayout(); });
+            WMenu.ShowBelowRight(m, rowTiles);
+        }
+
+        void SetSimple(bool on)
+        {
+            Prefs.Set("Simple", on ? "1" : "0");
+            Journal.Add(on ? L.T("Простой режим включён", "Simple mode on") : L.T("Простой режим выключен", "Simple mode off"));
+            RebuildLayout();
+        }
+
+        void RebuildLayout()
+        {
+            BuildUi();
+            UpdateUi();
+        }
+
+        // Простой режим: только большая кнопка и статус обычными словами.
+        void BuildSimplePage()
+        {
+            var sp = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 0, 30) };
+            power = new PowerHero(140);
+            power.Click += delegate { TogglePower(); };
+            sp.Children.Add(power);
+            panelTitle = power.TitleBlock;
+            panelSub = power.SubtitleBlock;
+            panelTitle.Margin = new Thickness(0, 4, 0, 0);
+            panelSub.TextWrapping = TextWrapping.Wrap; panelSub.TextAlignment = TextAlignment.Center; panelSub.TextTrimming = TextTrimming.None;
+            panelSub.MaxWidth = 300; panelSub.FontSize = W.Body; panelSub.Margin = new Thickness(0, 6, 0, 0);
+            mainPage.Children.Add(sp);
         }
 
         void ShowListsMenu(FrameworkElement anchor)
@@ -184,7 +311,8 @@ namespace ZapretGui
                     t = string.Join(L.T(" и ", " and "), bad) + (none
                         ? (bad.Count > 1 ? L.T(" не открываются", " don't open") : L.T(" не открывается", " doesn't open"))
                         : L.T(" работает с перебоями", " is unstable"));
-                    s = L.T("смените стратегию стрелками или нажмите «Подобрать стратегию»", "switch the strategy or click “Find a strategy”");
+                    s = simple ? L.T("выключите и снова включите обход; если не помогло — попросите помочь с настройкой", "turn the bypass off and on again; if that doesn't help, ask for help with the setup")
+                               : L.T("смените стратегию стрелками или нажмите «Подобрать стратегию»", "switch the strategy or click “Find a strategy”");
                     b = W.Warn;
                 }
             }

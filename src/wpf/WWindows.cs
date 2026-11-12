@@ -137,7 +137,7 @@ namespace ZapretGui
         Border optStd, optDpi;
         string mode = "std";
 
-        public PickSetupW(Window owner, List<string> strategies, int targetCount, bool fromFile) : base(L.T("Подбор стратегии", "Find a strategy"), owner)
+        public PickSetupW(Window owner, List<string> strategies, int targetCount, bool fromFile, List<string> preselect = null) : base(L.T("Подбор стратегии", "Find a strategy"), owner)
         {
             var sp = new StackPanel { Width = 420, Margin = new Thickness(22, 18, 22, 18) };
             sp.Children.Add(W.T(Title, W.Title, W.Text, true));
@@ -170,7 +170,8 @@ namespace ZapretGui
             box = new ListBox { SelectionMode = SelectionMode.Multiple, Background = Brushes.Transparent, BorderThickness = new Thickness(0), FontSize = W.Body };
             ScrollViewer.SetHorizontalScrollBarVisibility(box, ScrollBarVisibility.Disabled);
             foreach (string s in strategies) box.Items.Add(s);
-            box.SelectAll();
+            if (preselect == null) box.SelectAll();
+            else foreach (string s in strategies) if (preselect.Contains(s)) box.SelectedItems.Add(s);
             box.SelectionChanged += delegate { UpdateCount(); };
             all.Click += delegate { box.SelectAll(); };
             none.Click += delegate { box.UnselectAll(); };
