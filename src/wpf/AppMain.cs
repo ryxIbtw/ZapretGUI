@@ -176,6 +176,10 @@ namespace ZapretGui
             else if (page == "whatsnew")
                 target = new WhatsNewW(w, "1.10.4", "1.10.5", new System.Collections.Generic.List<string> { "general (ALT12)", "general (FAKE TLS AUTO ALT4)" },
                     new System.Collections.Generic.List<string> { "general (ALT3)" });
+            else if (page == "strategies") target = new StrategiesW(w);
+            else if (page == "help") target = new HelpW(w);
+            else if (page == "checksite") target = new CheckSiteW(w);
+            else if (page == "targets") target = new TargetsW(w, w.Zap);
             else if (page == "guinews")
                 target = new GuiNewsW(w, "2.3.0", File.ReadAllText(Environment.GetEnvironmentVariable("ZAPRETGUI_SNAP_NOTES")));
             else if (page == "report") target = new ReportW(w, () => "ZapretGUI v2.2.0  ·  zapret v1.10.4  ·  Windows 11 25H2 (build 26300.1)\r\nОбход: включён  ·  стратегия: general (ALT)");

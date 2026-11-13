@@ -170,9 +170,11 @@ namespace ZapretGui
         int bannerPriority = int.MaxValue;
         Grid rootGrid;
 
+        const double BannerSpace = 52;   // высота строки (42) + отступ под ней (10)
+
         FrameworkElement BuildBanner()
         {
-            banner = new Border { CornerRadius = new CornerRadius(12), Padding = new Thickness(14, 8, 10, 8), Margin = new Thickness(0, 0, 0, 10), Visibility = Visibility.Collapsed, BorderThickness = new Thickness(1) };
+            banner = new Border { CornerRadius = new CornerRadius(12), Padding = new Thickness(14, 0, 10, 0), Height = 42, Margin = new Thickness(0, 0, 0, 10), Visibility = Visibility.Collapsed, BorderThickness = new Thickness(1) };
             var g = new Grid();
             g.ColumnDefinitions.Add(new ColumnDefinition());
             g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -208,7 +210,7 @@ namespace ZapretGui
             if (banner.Visibility != Visibility.Visible)
             {
                 banner.Visibility = Visibility.Visible;
-                if (rootGrid != null) rootGrid.Height = Ht + 46;
+                if (rootGrid != null) rootGrid.Height = Ht + BannerSpace;
             }
         }
 

@@ -37,10 +37,34 @@ GUI by **ryxIbtw**.
 - **Ещё**: свои списки доменов и исключений, статистика, журнал событий, диагностика, классическое меню `service.bat`.
 - **Редактор списков**: свои домены, исключения и IP-исключения редактируются прямо в программе: добавить (можно сразу несколько, ссылки вида `https://site.com/...` сами превращаются в домен), удалить, поиск. Кириллические домены переводятся в нужный zapret вид (punycode). При желании список можно открыть в Блокноте.
 
+![Простой режим и статистика](docs/screenshots-2.png)
+
+**Когда обход сломался**
+- Уведомление из трея, когда YouTube или Discord перестали открываться (и когда снова заработали), красная точка на значке.
+- Если `winws.exe` не запустился, программа объясняет почему: нет прав, антивирус заблокировал драйвер, мешает другая программа, ошибка в стратегии.
+- **Автовосстановление** (по желанию): 5 минут не работает — программа сама пробует другие стратегии, сначала избранные.
+- После включения программа проверяет сайты и, если они не открылись, предлагает подбор. При запуске тихо проверяет конфликты и показывает найденное строкой на панели.
+
+**Стратегии и подбор**
+- Избранные стратегии (★): стрелки листают только их. Заметки к стратегиям, окно «Стратегии» с процентом работы за 30 дней.
+- Быстрый подбор по 5 лучшим, сравнение двух стратегий, свои сайты для проверки, подбор по расписанию (воскресенье, 4:00) и в фоне.
+- При равном результате первой идёт самая быстрая, равные отмечены «=1». Результаты можно скопировать для чата.
+
+**Статистика** — также пинг на графике, перебои по часам суток, список сбоев, сравнение с прошлой неделей, экспорт в CSV, срок хранения 7, 30 или 90 дней.
+
+**Сайты** — «Проверить сайт» с добавлением в «Мои домены», добавление из буфера обмена, свои плашки сервисов на панели (до трёх), импорт и экспорт списков, поиск дублей, обновление IPSet раз в неделю.
+
+**Удобство**
+- Горячая клавиша **Ctrl+Alt+Z**, команды `ZapretGUI.exe --on`, `--off`, `--toggle` для ярлыков и планировщика.
+- **Профили** (стратегия + игровой фильтр + IPSet), обход вместе с выбранными программами, пауза на 15 минут, час или 3 часа, тишина в полноэкранных играх.
+- Строка об обновлении на панели, автообновление ZapretGUI (по желанию), ярлыки одной кнопкой, переносной режим (`ZapretGUI.ini` рядом с программой), «Удалить всё».
+- Свой цвет акцента или как в Windows, порядок плиток, выбор кнопок внизу, масштаб Ctrl + колесо мыши, значки «?» с пояснениями, «Справка», управление с клавиатуры.
+- Если папки zapret нет, программа предлагает скачать его сама.
+
 **Значок в трее**
 - Левый клик открывает мини-панель над панелью задач: кнопка питания, стратегия со стрелками и индикаторы. Клик мимо панели её закрывает.
-- Цвет значка показывает состояние: цветной — обход включён, серый — выключен, жёлтая точка — идёт подбор или другая операция.
-- Правый клик открывает меню: «Открыть», «Включить/Выключить», «Выход».
+- Цвет значка показывает состояние: цветной — обход включён, серый — выключен, жёлтая точка — идёт подбор или другая операция, красная точка — сайты не открываются.
+- Правый клик открывает меню: «Открыть», «Включить/Выключить», выбор стратегии, пауза, подбор, статистика, «Проверить сайт», «Выход».
 - При наведении на индикаторы **YouTube ● Discord ●** видно, какие адреса открылись, за сколько миллисекунд и когда была проверка.
 
 **Настройки** (шестерёнка)
@@ -60,6 +84,8 @@ GUI by **ryxIbtw**.
 - **Обновление zapret в один клик**: программа скачивает релиз и заменяет файлы. Ваши списки, IPSet, игровой фильтр и fake-файлы сохраняются. Стратегии, которых нет в новой версии, не удаляются, а переносятся в папку `old-strategies\v<старая версия>`.
 
 Настройки хранятся в тех же файлах, что использует `service.bat`, поэтому GUI и консольное меню можно использовать вперемешку.
+
+Все изменения по версиям — в [CHANGELOG.md](CHANGELOG.md).
 
 ## Проверка файла
 
@@ -86,7 +112,7 @@ A minimal GUI for [zapret-discord-youtube](https://github.com/Flowseal/zapret-di
 
 Put `ZapretGUI.exe` next to `service.bat` in your zapret folder and run it (administrator rights are required by WinDivert).
 
-Features: dashboard main screen with a plain-language status, one-button on/off with a progress ring, live YouTube/Discord availability cards, availability statistics by day/week/month and by strategy, customizable tiles, simple mode (just the button), "what's new in zapret" after updates, one-click GitHub issue reports, automatic strategy finder, Windows autostart (service), game filter, IPSet, watchdog, built-in diagnostics with one-click fixes, fake file switcher, one-click zapret update that keeps your lists and settings, built-in list editor, event log, settings backup/restore, self-update with SHA256 verification, tray mode, dark/light/AMOLED/warm themes with accent colors and 75–125% UI scale, Russian/English UI.
+Features: dashboard main screen with a plain-language status, one-button on/off with a progress ring, live YouTube/Discord availability cards, availability statistics by day/week/month and by strategy, customizable tiles, simple mode (just the button), "what's new in zapret" after updates, one-click GitHub issue reports, tray alerts and auto-recovery when sites stop opening, favorites and notes for strategies, quick/scheduled/background tests, site checker, own service cards, profiles, hotkey and --on/--off/--toggle, pause, portable mode, automatic strategy finder, Windows autostart (service), game filter, IPSet, watchdog, built-in diagnostics with one-click fixes, fake file switcher, one-click zapret update that keeps your lists and settings, built-in list editor, event log, settings backup/restore, self-update with SHA256 verification, tray mode, dark/light/AMOLED/warm themes with accent colors and 75–125% UI scale, Russian/English UI.
 
 Each release ships `ZapretGUI.exe.sha256`; compare it with `Get-FileHash ZapretGUI.exe` or the About window.
 

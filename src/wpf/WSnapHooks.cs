@@ -23,6 +23,8 @@ namespace ZapretGui
             }
             string on = Environment.GetEnvironmentVariable("ZAPRETGUI_SNAP_ON");
             if (on != null) { running = on == "1"; activeStrategy = running ? selected : null; power.SetOn(running, false); }
+            if (Environment.GetEnvironmentVariable("ZAPRETGUI_SNAP_BANNER") == "1")
+                ShowBanner(L.T("Вышла ZapretGUI v2.4.0", "ZapretGUI v2.4.0 is out"), L.T("Обновить", "Update"), null, W.Accent, 0);
             if (Environment.GetEnvironmentVariable("ZAPRETGUI_SNAP_PICK") == "1") { busy = true; picking = true; pickProgress = 0.62; busyText = "Подбор 12 / 18"; pickName = "general (FAKE TLS AUTO)"; }
             UpdateUi();
         }

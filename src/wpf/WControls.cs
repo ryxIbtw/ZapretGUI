@@ -321,6 +321,8 @@ namespace ZapretGui
             ToolTipService.SetShowDuration(q, 30000);
             row.Children.Add(q);
             texts.Children.Insert(0, row);
+            // название сокращается многоточием, а «?» остаётся видна, даже если места мало
+            texts.SizeChanged += delegate { title.MaxWidth = Math.Max(40, texts.ActualWidth - 22); };
         }
         public string Hint
         {

@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: zapret-discord-youtube (Flowseal)
+    url: https://github.com/Flowseal/zapret-discord-youtube/issues
+    about: Если проблема в самих стратегиях zapret, а не в программе
