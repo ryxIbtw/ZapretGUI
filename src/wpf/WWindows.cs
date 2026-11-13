@@ -440,6 +440,13 @@ namespace ZapretGui
             discord.Click += delegate { ClearDiscord(); };
             bar.Children.Add(rerun); bar.Children.Add(discord);
             sp.Children.Add(bar);
+            var bar2 = new Grid { Margin = new Thickness(0, 8, 0, 0) };
+            var save = new FlatLink(L.T("Сохранить отчёт в файл", "Save report to a file")) { HorizontalAlignment = HorizontalAlignment.Left };
+            save.Click += delegate { SaveReport(); };
+            speed = new FlatLink(L.T("Замер скорости YouTube", "YouTube speed test")) { HorizontalAlignment = HorizontalAlignment.Right };
+            speed.Click += delegate { SpeedTest(); };
+            bar2.Children.Add(save); bar2.Children.Add(speed);
+            sp.Children.Add(bar2);
             Root.Child = sp;
             ContentRendered += delegate { Start(); };
         }
@@ -459,8 +466,60 @@ namespace ZapretGui
             });
         }
 
+        List<DiagItem> lastItems = new List<DiagItem>();
+        FlatLink speed;
+
+        // Отчёт для поддержки: все проверки и сведения о системе.
+        void SaveReport()
+        {
+            var d = new Microsoft.Win32.SaveFileDialog { Filter = L.T("Текстовые файлы|*.txt", "Text files|*.txt"), FileName = "zapretgui-diagnostics-" + DateTime.Now.ToString("yyyy-MM-dd") + ".txt" };
+            if (d.ShowDialog(this) != true) return;
+            var sb = new System.Text.StringBuilder();
+            sb.Append(L.T("Диагностика ZapretGUI v", "ZapretGUI diagnostics v")).Append(SelfUpdate.Current.ToString(3)).Append(" · zapret v").Append(z.LocalVersion).Append(" · ")
+              .Append(DateTime.Now.ToString("dd.MM.yyyy HH:mm")).Append("\r\n\r\n");
+            foreach (var it in lastItems)
+                sb.Append(it.Level == 0 ? "[ok]   " : it.Level == 1 ? "[!]    " : "[ПРОБЛЕМА] ").Append(it.Title).Append(string.IsNullOrEmpty(it.Detail) ? "" : " — " + it.Detail).Append("\r\n");
+            sb.Append("\r\n").Append(L.T("Журнал (последние записи):", "Log (latest entries):")).Append("\r\n");
+            var j = Journal.Read();
+            foreach (string l in j.Skip(Math.Max(0, j.Count - 40))) sb.Append(l).Append("\r\n");
+            try
+            {
+                string text = sb.ToString(), prof = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+                if (!string.IsNullOrEmpty(prof)) text = text.Replace(prof, "%USERPROFILE%");
+                File.WriteAllText(d.FileName, text, new System.Text.UTF8Encoding(true));
+                summary.Foreground = W.Accent; summary.Text = L.T("Отчёт сохранён", "Report saved");
+            }
+            catch (Exception ex) { summary.Foreground = W.Danger; summary.Text = ex.Message; }
+        }
+
+        // Замер скорости: несколько картинок с серверов YouTube подряд.
+        void SpeedTest()
+        {
+            speed.Text = L.T("Замеряю…", "Measuring…");
+            ThreadPool.QueueUserWorkItem(delegate
+            {
+                string[] ids = { "dQw4w9WgXcQ", "jNQXAC9IVRw", "9bZkp7q19f0", "kJQP7kiw5Fk", "OPf0YbXqDm0", "RgKAFK5djSk" };
+                double kb = 0, sec = 0;
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                foreach (string id in ids)
+                {
+                    double r = NetCheck.SpeedKBps("https://i.ytimg.com/vi/" + id + "/maxresdefault.jpg", 8000);
+                    if (r > 0) { kb += 1; sec += 1 / r; }   // средняя скорость по картинкам
+                }
+                double kbps = kb > 0 ? kb / sec : 0;
+                Dispatcher.BeginInvoke((Action)delegate
+                {
+                    speed.Text = L.T("Замер скорости YouTube", "YouTube speed test");
+                    summary.Foreground = kbps > 0 ? W.Accent : W.Danger;
+                    summary.Text = kbps > 0 ? L.T("Скорость с серверов YouTube: ~", "Speed from YouTube servers: ~") + PickResult.FormatSpeed(kbps) + " (" + Math.Round(kbps * 8 / 1024, 1) + L.T(" Мбит/с)", " Mbit/s)")
+                                            : L.T("Серверы YouTube не ответили", "YouTube servers did not respond");
+                });
+            });
+        }
+
         void Fill(List<DiagItem> items)
         {
+            lastItems = items;
             list.Children.Clear();
             foreach (var it in items)
             {
@@ -537,7 +596,17 @@ namespace ZapretGui
             sp.Children.Add(W.T(Title, W.Title, W.Text, true));
             summary = W.T("", W.Small, W.Muted); summary.Margin = new Thickness(0, 4, 0, 10);
             sp.Children.Add(summary);
-            box = new TextBox { IsReadOnly = true, TextWrapping = TextWrapping.Wrap, AcceptsReturn = true, Height = 420, FontFamily = W.MonoFont, FontSize = 12,
+            // поиск и фильтр «только проблемы»
+            var filterRow = new Grid { Margin = new Thickness(0, 0, 0, 8) };
+            filterRow.ColumnDefinitions.Add(new ColumnDefinition()); filterRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            search = new TextBox { Tag = L.T("Поиск по журналу…", "Search the log…") };
+            search.TextChanged += delegate { Fill(); };
+            filterRow.Children.Add(search);
+            onlyErrors = new RangeTab(L.T("Только проблемы", "Problems only")) { Margin = new Thickness(8, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
+            onlyErrors.Click += delegate { onlyErrors.On = !onlyErrors.On; Fill(); };
+            Grid.SetColumn(onlyErrors, 1); filterRow.Children.Add(onlyErrors);
+            sp.Children.Add(filterRow);
+            box = new TextBox { IsReadOnly = true, TextWrapping = TextWrapping.Wrap, AcceptsReturn = true, Height = 400, FontFamily = W.MonoFont, FontSize = 12,
                 VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
             sp.Children.Add(box);
             var bar = new Grid { Margin = new Thickness(0, 14, 0, 0) };
@@ -567,13 +636,23 @@ namespace ZapretGui
             Fill();
         }
 
+        readonly TextBox search;
+        readonly RangeTab onlyErrors;
+        // слова, по которым запись считается проблемой
+        static readonly string[] ProblemWords = { "ошибк", "error", "не удалось", "failed", "could not", "завершился", "exited", "сбой", "problem", "не помог", "didn't help", "не открыва", "doesn't open", "2/3", "1/3", "0/3", "проблем" };
+
         void Fill()
         {
-            var lines = Journal.Read();
-            box.Text = lines.Count == 0 ? L.T("Пока записей нет.", "No entries yet.") : string.Join("\r\n", lines);
+            var all = Journal.Read();
+            string q = search == null ? "" : search.Text.Trim();
+            bool errs = onlyErrors != null && onlyErrors.On;
+            var lines = all.Where(l => (q == "" || l.IndexOf(q, StringComparison.OrdinalIgnoreCase) >= 0) &&
+                                       (!errs || ProblemWords.Any(w => l.IndexOf(w, StringComparison.OrdinalIgnoreCase) >= 0))).ToList();
+            box.Text = lines.Count == 0 ? (all.Count == 0 ? L.T("Пока записей нет.", "No entries yet.") : L.T("Ничего не найдено.", "Nothing found.")) : string.Join("\r\n", lines);
             box.ScrollToEnd();
             summary.Foreground = W.Muted;
-            summary.Text = L.T("Записей: " + lines.Count + "  ·  хранятся последние " + Journal.Keep, "Entries: " + lines.Count + "  ·  the last " + Journal.Keep + " are kept");
+            summary.Text = L.T("Записей: " + all.Count, "Entries: " + all.Count) + (lines.Count != all.Count ? L.T(", показано: " + lines.Count, ", shown: " + lines.Count) : "") +
+                L.T("  ·  хранятся последние " + Journal.Keep, "  ·  the last " + Journal.Keep + " are kept");
         }
     }
 

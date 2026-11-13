@@ -149,7 +149,41 @@ namespace ZapretGui
             }
             else list.Add(Ok(L.T("Других программ обхода нет", "No other bypass services")));
 
+            var dns = DnsCheck();
+            if (dns != null) list.Add(dns);
+
             return list.OrderByDescending(i => i.Level).ToList();
+        }
+
+        // Подменяет ли DNS провайдера адреса YouTube: сравнить ответ системного DNS с ответом Cloudflare (DNS через HTTPS).
+        public static DiagItem DnsCheck()
+        {
+            List<string> sys;
+            try { sys = System.Net.Dns.GetHostAddresses("www.youtube.com").Where(a => a.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork).Select(a => a.ToString()).ToList(); }
+            catch { return Warn(L.T("DNS не ответил про youtube.com", "DNS did not resolve youtube.com"), L.T("Проверьте подключение или DNS-сервер", "Check the connection or the DNS server")); }
+            Func<string, bool> bogus = ip => ip.StartsWith("0.") || ip.StartsWith("127.") || ip.StartsWith("10.") || ip.StartsWith("192.168.") ||
+                Regex.IsMatch(ip, "^172\\.(1[6-9]|2\\d|3[01])\\.");
+            if (sys.Count == 0 || sys.All(bogus))
+                return Bad(L.T("DNS подменяет адрес YouTube", "DNS spoofs the YouTube address"),
+                    L.T("Системный DNS вернул ", "System DNS returned ") + (sys.Count == 0 ? "—" : string.Join(", ", sys)) +
+                    L.T(". Включите DNS через HTTPS в Windows или в браузере.", ". Turn on DNS over HTTPS in Windows or the browser."));
+            List<string> doh = new List<string>();
+            try
+            {
+                var req = (System.Net.HttpWebRequest)System.Net.WebRequest.Create("https://cloudflare-dns.com/dns-query?name=www.youtube.com&type=A");
+                req.Accept = "application/dns-json"; req.Timeout = 5000; req.Proxy = null; req.UserAgent = "ZapretGUI";
+                using (var resp = req.GetResponse())
+                using (var rd = new StreamReader(resp.GetResponseStream()))
+                    foreach (Match m in Regex.Matches(rd.ReadToEnd(), "\"data\"\\s*:\\s*\"(\\d+\\.\\d+\\.\\d+\\.\\d+)\"")) doh.Add(m.Groups[1].Value);
+            }
+            catch { }
+            // у YouTube адреса Google: при любом честном DNS они из диапазонов Google
+            Func<string, bool> google = ip => new[] { "142.250.", "142.251.", "172.217.", "172.253.", "216.58.", "216.239.", "173.194.", "74.125.", "64.233.", "108.177.", "209.85.", "192.178." }.Any(ip.StartsWith);
+            if (sys.Any(google) || doh.Count > 0 && sys.Intersect(doh).Any())
+                return Ok(L.T("DNS отвечает честно (youtube.com → ", "DNS answers honestly (youtube.com → ") + sys[0] + ")");
+            return Warn(L.T("DNS может подменять адреса", "DNS may be spoofing addresses"),
+                L.T("youtube.com → ", "youtube.com → ") + string.Join(", ", sys.Take(3)) + (doh.Count > 0 ? L.T(", а Cloudflare отвечает ", ", while Cloudflare says ") + doh[0] : "") +
+                L.T(". Если сайты не открываются, включите DNS через HTTPS.", ". If sites don't open, turn on DNS over HTTPS."));
         }
 
         static void AddConflict(List<DiagItem> list, List<ServiceController> found, string name, string detail)

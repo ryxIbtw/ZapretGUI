@@ -804,6 +804,8 @@ namespace ZapretGui
             WMenu.Add(m, L.T("Страница zapret на GitHub", "zapret on GitHub"), false, () => Shell(AboutW.ZapretUrl, null));
             WMenu.Add(m, L.T("Страница ZapretGUI на GitHub", "ZapretGUI on GitHub"), false, () => Shell(AboutW.RepoUrl, null));
             WMenu.Sep(m);
+            WMenu.Add(m, L.T("Справка", "Help"), false, () => new HelpW(this).ShowDialog());
+            WMenu.Add(m, L.T("Обсуждения на GitHub", "Discussions on GitHub"), false, () => Shell(HelpW.DiscussionsUrl, null));
             WMenu.Add(m, L.T("Сообщить о проблеме", "Report a problem"), false, ShowReport);
             WMenu.ShowAbove(m, anchor);
         }
