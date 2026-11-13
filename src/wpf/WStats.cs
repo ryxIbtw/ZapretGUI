@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -150,8 +151,88 @@ namespace ZapretGui
         protected override void OnHot(bool h) { if (!on) tb.Foreground = h ? W.Text : W.Muted; }
     }
 
+    // Линия среднего пинга по времени.
+    class PingChart : FrameworkElement
+    {
+        double[] data = new double[0];
+        public PingChart() { Height = 64; }
+        public void Set(double[] d) { data = d; InvalidateVisual(); }
+        public double Max { get { double m = 0; foreach (var v in data) if (v > m) m = v; return m; } }
+        protected override void OnRender(DrawingContext dc)
+        {
+            double w = ActualWidth, h = ActualHeight;
+            dc.DrawRectangle(Brushes.Transparent, null, new Rect(0, 0, w, h));
+            double max = Math.Max(50, Max * 1.15);
+            var pen = new Pen(W.Accent, 1.6) { LineJoin = PenLineJoin.Round };
+            var grid = new Pen(W.Line, 1);
+            dc.DrawLine(grid, new Point(0, h - 0.5), new Point(w, h - 0.5));
+            dc.DrawLine(grid, new Point(0, h / 2), new Point(w, h / 2));
+            var lbl = StatBar.Text(Math.Round(max / 2) + L.T(" мс", " ms"), W.Dim);
+            dc.DrawText(lbl, new Point(w - lbl.Width, h / 2 - lbl.Height - 1));
+            if (data.Length == 0) return;
+            double step = w / data.Length;
+            Point? prev = null;
+            for (int i = 0; i < data.Length; i++)
+            {
+                if (data[i] < 0) { prev = null; continue; }   // нет данных — разрыв линии
+                var p = new Point(step * (i + 0.5), h - 2 - (h - 4) * Math.Min(1, data[i] / max));
+                if (prev != null) dc.DrawLine(pen, prev.Value, p); else dc.DrawEllipse(W.Accent, null, p, 1.4, 1.4);
+                prev = p;
+            }
+        }
+    }
+
+    // Столбики: в какие часы суток чаще перебои.
+    class HourBars : FrameworkElement
+    {
+        double[] data = new double[24];
+        readonly ToolTip tip = new ToolTip();
+        public HourBars()
+        {
+            Height = 70;
+            tip.PlacementTarget = this; tip.Placement = PlacementMode.Relative;
+            MouseMove += (s, e) =>
+            {
+                double x = e.GetPosition(this).X;
+                int hr = (int)(x / Math.Max(1, ActualWidth) * 24);
+                if (hr < 0 || hr > 23) return;
+                tip.Content = hr.ToString("00") + ":00–" + ((hr + 1) % 24).ToString("00") + ":00  ·  " +
+                    (data[hr] < 0 ? L.T("нет данных", "no data") : L.T("перебои ", "problems ") + Math.Round(data[hr] * 100) + L.T("% времени", "% of the time"));
+                tip.HorizontalOffset = x + 12; tip.VerticalOffset = ActualHeight;
+                tip.IsOpen = true;
+            };
+            MouseLeave += delegate { tip.IsOpen = false; };
+        }
+        public void Set(double[] d) { data = d; InvalidateVisual(); }
+        protected override void OnRender(DrawingContext dc)
+        {
+            double w = ActualWidth, h = ActualHeight - 14;
+            dc.DrawRectangle(Brushes.Transparent, null, new Rect(0, 0, w, ActualHeight));
+            double bw = w / 24;
+            for (int i = 0; i < 24; i++)
+            {
+                double v = data[i];
+                var r = new Rect(i * bw + 1.5, 0, Math.Max(1, bw - 3), h);
+                dc.DrawRoundedRectangle(W.Bg, null, r, 3, 3);
+                if (v > 0)
+                {
+                    double bh = Math.Max(3, h * Math.Min(1, v * 4));   // 25% времени с перебоями — полный столбик
+                    dc.DrawRoundedRectangle(v >= 0.1 ? W.Danger : W.Warn, null, new Rect(r.X, h - bh, r.Width, bh), 3, 3);
+                }
+                else if (v == 0) dc.DrawRoundedRectangle(W.AccentLine, null, new Rect(r.X, h - 3, r.Width, 3), 1.5, 1.5);
+                if (i % 3 == 0) dc.DrawText(StatBar.Text(i.ToString("00"), W.Dim), new Point(i * bw + 1, h + 1));
+            }
+        }
+    }
+
     class StatsW : WinBase
     {
+        readonly PingChart ping = new PingChart();
+        readonly HourBars hours = new HourBars();
+        readonly StackPanel outList = new StackPanel();
+        readonly TextBlock weekCmp, pingNote;
+        readonly StackPanel extra = new StackPanel();
+        List<StatRec> lastRecs = new List<StatRec>();
         readonly Func<DateTime, List<StatRec>> load;
         readonly RangeTab[] tabs;
         readonly StatBar barYt = new StatBar(false), barDc = new StatBar(false), barStrat = new StatBar(true);
@@ -169,7 +250,8 @@ namespace ZapretGui
             var head = new Grid();
             head.Children.Add(W.T(Title, W.Title, W.Text, true));
             var tabRow = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center };
-            tabs = new[] { new RangeTab(L.T("Сегодня", "Today")), new RangeTab(L.T("Неделя", "Week")), new RangeTab(L.T("Месяц", "Month")) };
+            string allLabel = Stats.KeepDays == 30 ? L.T("Месяц", "Month") : Stats.KeepDays == 90 ? L.T("90 дней", "90 days") : L.T("Всё", "All");
+            tabs = new[] { new RangeTab(L.T("Сегодня", "Today")), new RangeTab(L.T("Неделя", "Week")), new RangeTab(allLabel) };
             for (int i = 0; i < tabs.Length; i++)
             {
                 int idx = i;
@@ -240,6 +322,29 @@ namespace ZapretGui
             tOn = tile(L.T("Обход включён", "Bypass on"));
             ((Border)tiles.Children[3]).Margin = new Thickness(0);
             sp.Children.Add(tiles);
+            weekCmp = W.T("", W.Small, W.Muted); weekCmp.Margin = new Thickness(2, 8, 0, 0); weekCmp.TextWrapping = TextWrapping.Wrap;
+            sp.Children.Add(weekCmp);
+
+            // пинг, сбои по часам, список сбоев
+            Func<string, FrameworkElement, TextBlock, Border> section = (title, content, note) =>
+            {
+                var b = new Border { Background = W.Surface, CornerRadius = new CornerRadius(14), Padding = new Thickness(14, 10, 14, 10), Margin = new Thickness(0, 10, 0, 0) };
+                var st = new StackPanel();
+                var hg = new Grid();
+                hg.Children.Add(W.T(title, W.Body, W.Text));
+                if (note != null) { note.HorizontalAlignment = HorizontalAlignment.Right; hg.Children.Add(note); }
+                st.Children.Add(hg);
+                content.Margin = new Thickness(0, 8, 0, 0);
+                st.Children.Add(content);
+                b.Child = st;
+                return b;
+            };
+            pingNote = W.T("", W.Small, W.Muted);
+            extra.Children.Add(section(L.T("Пинг", "Ping"), ping, pingNote));
+            var hn = W.T(L.T("наведите на столбик", "hover a bar"), W.Small, W.Dim);
+            extra.Children.Add(section(L.T("Перебои по часам суток", "Problems by hour of day"), hours, hn));
+            extra.Children.Add(section(L.T("Последние сбои", "Recent outages"), outList, null));
+            sp.Children.Add(extra);
 
             // по стратегиям
             var th = W.T(L.T("По стратегиям", "By strategy"), W.BodyStrong, W.Text, true); th.Margin = new Thickness(0, 16, 0, 6);
@@ -258,14 +363,41 @@ namespace ZapretGui
                 try { if (File.Exists(Stats.FilePath)) Process.Start(new ProcessStartInfo("notepad.exe", "\"" + Stats.FilePath + "\"") { UseShellExecute = true }); }
                 catch { }
             };
-            foot.Children.Add(open);
-            var keep = W.T(L.T("Хранится " + Stats.KeepDays + " дней", "Kept for " + Stats.KeepDays + " days"), W.Small, W.Dim);
-            keep.HorizontalAlignment = HorizontalAlignment.Right;
-            foot.Children.Add(keep);
+            var left = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Left };
+            left.Children.Add(open);
+            var csv = new FlatLink(L.T("Экспорт в CSV", "Export to CSV")) { Margin = new Thickness(14, 0, 0, 0) };
+            csv.Click += delegate { ExportCsv(); };
+            left.Children.Add(csv);
+            var clear = new FlatLink(L.T("Очистить", "Clear")) { Margin = new Thickness(14, 0, 0, 0) };
+            clear.Click += delegate
+            {
+                if (AskW.Show(this, L.T("Удалить всю статистику? Это нельзя отменить.", "Delete all statistics? This can't be undone."),
+                        L.T("Статистика", "Statistics"), MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
+                Stats.Clear();
+                Journal.Add(L.T("Статистика очищена", "Statistics cleared"));
+                Select(cur);
+            };
+            left.Children.Add(clear);
+            foot.Children.Remove(open);
+            foot.Children.Add(left);
+            var keepRow = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+            keepRow.Children.Add(W.T(L.T("Хранить: ", "Keep: "), W.Small, W.Dim));
+            foreach (int d in new[] { 7, 30, 90 })
+            {
+                int dd = d;
+                var l = new FlatLink(d.ToString()) { Margin = new Thickness(4, 0, 4, 0) };
+                if (d == Stats.KeepDays) l.Child = W.T(d.ToString(), W.Small, W.Accent, true);
+                l.Click += delegate { Stats.KeepDays = dd; Journal.Add(L.T("Статистика хранится ", "Statistics kept for ") + dd + L.T(" дней", " days")); Close(); };
+                keepRow.Children.Add(l);
+            }
+            keepRow.Children.Add(W.T(L.T("дней", "days"), W.Small, W.Dim));
+            foot.Children.Add(keepRow);
             sp.Children.Add(foot);
 
-            Root.Child = sp;
-            repaint = () => { barYt.InvalidateVisual(); barDc.InvalidateVisual(); barStrat.InvalidateVisual(); axis.InvalidateVisual(); };
+            // длинное окно — с прокруткой
+            Root.Child = new ScrollViewer { Content = sp, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                MaxHeight = SystemParameters.WorkArea.Height * 0.88 / Math.Max(0.75, Theme.UiScale) };
+            repaint = () => { barYt.InvalidateVisual(); barDc.InvalidateVisual(); barStrat.InvalidateVisual(); axis.InvalidateVisual(); ping.InvalidateVisual(); hours.InvalidateVisual(); };
             W.Changed += repaint;
             Closed += delegate { W.Changed -= repaint; };
             Select(0);
@@ -311,6 +443,65 @@ namespace ZapretGui
                       "No data for this period. Statistics are collected while the app is running — in the window or in the tray.")
                 : by.Count == 0 ? L.T("Обход за этот период не включался.", "The bypass was not on during this period.") : "";
             empty.Visibility = empty.Text == "" ? Visibility.Collapsed : Visibility.Visible;
+
+            cur = range; lastRecs = recs; lastFrom = from; lastTo = to;
+            extra.Visibility = recs.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
+            // пинг: сутки — по 15 минут, неделя — по часу, дольше — по 4 часа
+            int buckets = range == 0 ? 96 : range == 1 ? 168 : (int)Math.Max(1, (to - from).TotalHours / 4);
+            ping.Set(Stats.PingSeries(recs, from, to, buckets));
+            var all = recs.Where(r => r.On && r.Net).SelectMany(r => new[] { r.YtMs, r.DcMs }).Where(m => m >= 0).ToList();
+            pingNote.Text = all.Count == 0 ? "" : L.T("в среднем ", "average ") + (int)all.Average() + L.T(" мс", " ms");
+            hours.Set(Stats.FailByHour(recs, from, to));
+            FillOutages(recs, from, to);
+
+            // сравнение с прошлой неделей
+            weekCmp.Text = "";
+            if (range == 1)
+            {
+                DateTime pf = from.AddDays(-7), pt = from;
+                var prev = load(pf).Where(r => r.T < pt).ToList();
+                double pyt = Stats.UpPct(prev, 0, pf, pt), pdc = Stats.UpPct(prev, 1, pf, pt);
+                if (pyt >= 0 && yt >= 0)
+                {
+                    Func<double, double, string> diff = (a, b) => { int d = (int)Math.Round(a - b); return d == 0 ? L.T("так же", "same") : (d > 0 ? "+" : "") + d + "%"; };
+                    weekCmp.Text = L.T("По сравнению с прошлой неделей: YouTube ", "Compared to last week: YouTube ") + diff(yt, pyt) +
+                                   (pdc >= 0 && dc >= 0 ? ", Discord " + diff(dc, pdc) : "") + L.T(" (было ", " (was ") + Pct(pyt) + (pdc >= 0 ? " / " + Pct(pdc) : "") + ")";
+                    weekCmp.Foreground = yt >= pyt ? W.Accent : W.Warn;
+                }
+            }
+        }
+
+        int cur;
+        DateTime lastFrom, lastTo;
+
+        void FillOutages(List<StatRec> recs, DateTime from, DateTime to)
+        {
+            outList.Children.Clear();
+            var all = Stats.OutageList(recs, 0, from, to).Select(s => Tuple.Create("YouTube", s))
+                .Concat(Stats.OutageList(recs, 1, from, to).Select(s => Tuple.Create("Discord", s)))
+                .OrderByDescending(x => x.Item2.From).Take(8).ToList();
+            if (all.Count == 0) { outList.Children.Add(W.T(L.T("Сбоев не было", "No outages"), W.Small, W.Accent)); return; }
+            foreach (var x in all)
+            {
+                var s = x.Item2;
+                var g = new Grid { Margin = new Thickness(0, 2, 0, 2) };
+                foreach (double w in new[] { 70.0, 170, 90 }) g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(w) });
+                g.ColumnDefinitions.Add(new ColumnDefinition());
+                Action<int, string, Brush> c = (col, t, b) => { var tb = W.T(t, W.Small, b); Grid.SetColumn(tb, col); g.Children.Add(tb); };
+                c(0, x.Item1, s.Kind == 5 ? W.Danger : W.Warn);
+                c(1, s.From.ToString(s.From.Date == DateTime.Today ? "HH:mm" : "dd.MM HH:mm") + " – " + s.To.ToString("HH:mm"), W.Text);
+                c(2, Dur((s.To - s.From).TotalSeconds), W.Muted);
+                c(3, s.Strategy, W.Muted);
+                outList.Children.Add(g);
+            }
+        }
+
+        void ExportCsv()
+        {
+            var d = new Microsoft.Win32.SaveFileDialog { Filter = "CSV|*.csv", FileName = "zapretgui-stats-" + DateTime.Now.ToString("yyyy-MM-dd") + ".csv" };
+            if (d.ShowDialog(this) != true) return;
+            try { Stats.ExportCsv(lastRecs, d.FileName); Journal.Add(L.T("Статистика выгружена: ", "Statistics exported: ") + d.FileName); }
+            catch (Exception ex) { AskW.Show(this, ex.Message, L.T("Экспорт", "Export"), MessageBoxButton.OK, MessageBoxImage.Warning); }
         }
 
         static void SetPct(TextBlock t, double v)

@@ -41,7 +41,87 @@ namespace ZapretGui
 
     static class Stats
     {
-        public const int KeepDays = 30;
+        // Срок хранения: 7, 30 или 90 дней (настройка в окне «Статистика»).
+        public static int KeepDays
+        {
+            get { int d; return int.TryParse(Prefs.Get("StatsKeep", "30"), out d) && (d == 7 || d == 30 || d == 90) ? d : 30; }
+            set { Prefs.Set("StatsKeep", value.ToString()); lastTrim = DateTime.MinValue; }
+        }
+
+        // Очистить всю статистику (файл остаётся, но пустой).
+        public static void Clear()
+        {
+            lock (sync)
+            {
+                try { if (File.Exists(FilePath)) File.WriteAllText(FilePath, "", Encoding.UTF8); } catch { }
+                cache = null;
+            }
+        }
+
+        // Перебои сервиса: когда начались, когда кончились и на какой стратегии (рядом меньше 10 минут — один перебой).
+        public static List<StatSeg> OutageList(List<StatRec> recs, int service, DateTime from, DateTime to)
+        {
+            var res = new List<StatSeg>();
+            foreach (var s in Segments(recs, service, from, to))
+            {
+                if (s.Kind != 4 && s.Kind != 5) continue;
+                var last = res.Count > 0 ? res[res.Count - 1] : null;
+                if (last != null && (s.From - last.To).TotalMinutes < 10) { last.To = s.To; if (s.Kind == 5) last.Kind = 5; continue; }
+                var r = recs.LastOrDefault(x => x.T <= s.From.AddSeconds(1));
+                res.Add(new StatSeg { From = s.From, To = s.To, Kind = s.Kind, Strategy = r != null ? r.Strategy : "" });
+            }
+            return res;
+        }
+
+        // Средний пинг (YouTube и Discord вместе) по равным отрезкам времени; -1 — нет данных.
+        public static double[] PingSeries(List<StatRec> recs, DateTime from, DateTime to, int buckets)
+        {
+            var sum = new double[buckets]; var n = new int[buckets];
+            double span = Math.Max(1, (to - from).TotalSeconds);
+            foreach (var r in recs)
+            {
+                if (r.T < from || r.T >= to || !r.On || !r.Net) continue;
+                int b = (int)((r.T - from).TotalSeconds / span * buckets);
+                if (b < 0 || b >= buckets) continue;
+                if (r.YtMs >= 0) { sum[b] += r.YtMs; n[b]++; }
+                if (r.DcMs >= 0) { sum[b] += r.DcMs; n[b]++; }
+            }
+            var res = new double[buckets];
+            for (int i = 0; i < buckets; i++) res[i] = n[i] > 0 ? sum[i] / n[i] : -1;
+            return res;
+        }
+
+        // Доля времени с перебоями по часам суток (0–23); -1 — в этот час данных нет.
+        public static double[] FailByHour(List<StatRec> recs, DateTime from, DateTime to)
+        {
+            var all = new double[24]; var bad = new double[24];
+            for (int i = 0; i < recs.Count; i++)
+            {
+                DateTime a, b;
+                Span(recs, i, from, to, out a, out b);
+                if (b <= a) continue;
+                int k = KindOf(recs[i], 3);
+                if (k < 3) continue;
+                double s = (b - a).TotalSeconds;
+                all[a.Hour] += s;
+                if (k > 3) bad[a.Hour] += s;
+            }
+            var res = new double[24];
+            for (int h = 0; h < 24; h++) res[h] = all[h] > 0 ? bad[h] / all[h] : -1;
+            return res;
+        }
+
+        // Записи в CSV (для Excel): время; обход; стратегия; YouTube; Discord; пинг; интернет.
+        public static void ExportCsv(List<StatRec> recs, string path)
+        {
+            var sb = new StringBuilder();
+            sb.Append("time;bypass_on;strategy;youtube_ok;youtube_total;discord_ok;discord_total;youtube_ms;discord_ms;internet\r\n");
+            foreach (var r in recs)
+                sb.Append(r.T.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)).Append(';').Append(r.On ? 1 : 0).Append(';')
+                  .Append((r.Strategy ?? "").Replace(";", ",")).Append(';').Append(r.Yt).Append(';').Append(r.YtMax).Append(';')
+                  .Append(r.Dc).Append(';').Append(r.DcMax).Append(';').Append(r.YtMs).Append(';').Append(r.DcMs).Append(';').Append(r.Net ? 1 : 0).Append("\r\n");
+            File.WriteAllText(path, sb.ToString(), new UTF8Encoding(true));
+        }
         public const int MaxGapSec = 150;     // проверка раз в минуту; дольше — значит, программа не работала
         public static bool Enabled = true;    // в тестовых снимках не пишется
         public static string PathOverride = null;
