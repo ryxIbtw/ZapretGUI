@@ -152,7 +152,8 @@ namespace ZapretGui
         const string DefaultTiles = "auto,watch,game,ipset";
         bool simple;
         List<string> tiles = new List<string>();
-        SettingRowW rowSimple, rowTiles, rowNotify, rowAutoFix, rowSchedule, rowServices, rowIpsetAuto;
+        SettingRowW rowSimple, rowTiles, rowNotify, rowAutoFix, rowSchedule, rowServices, rowIpsetAuto,
+            rowHotkey, rowProfiles, rowAutoApps, rowGameQuiet, rowGuiAutoUpdate, rowPortable, rowShortcuts, rowRemoveAll;
 
         void LoadLayoutPrefs()
         {
@@ -207,6 +208,22 @@ namespace ZapretGui
             rowAutoFix = new SettingRowW(L.T("Автовосстановление", "Auto-recovery"), true, "shield", L.T("5 минут не работает — пробовать другие стратегии", "5 minutes down — try other strategies"), false, rh);
             rowSchedule = new SettingRowW(L.T("Подбор по расписанию", "Scheduled test"), true, "chart", L.T("воскресенье 4:00 · лучшая применится сама", "Sunday 4:00 · the best is applied"), false, rh);
             rowSchedule.Click += delegate { SetSchedule(!scheduleOn); };
+            rowHotkey = new SettingRowW(L.T("Горячая клавиша Ctrl+Alt+Z", "Hotkey Ctrl+Alt+Z"), true, "power", L.T("включить или выключить обход откуда угодно", "turn the bypass on or off from anywhere"), false, rh);
+            rowHotkey.Click += delegate { ToggleHotkey(); };
+            rowProfiles = new SettingRowW(L.T("Профили", "Profiles"), false, "layers", L.T("стратегия, игровой фильтр и IPSet одним кликом", "strategy, game filter and IPSet in one click"), false, rh);
+            rowProfiles.Click += delegate { ShowProfilesMenu(null); };
+            rowAutoApps = new SettingRowW(L.T("Обход вместе с программами", "Bypass with programs"), false, "monitor", L.T("включать, когда запущена игра или Discord", "turn on while a game or Discord runs"), false, rh);
+            rowAutoApps.Click += delegate { ShowAutoAppsMenu(); };
+            rowGameQuiet = new SettingRowW(L.T("Тишина в играх", "Quiet in games"), true, "monitor", L.T("не проверять сайты в полноэкранной игре", "don't check sites during a fullscreen game"), false, rh);
+            rowGameQuiet.Click += delegate { GameQuiet = !GameQuiet; UpdateUi(); };
+            rowGuiAutoUpdate = new SettingRowW(L.T("Обновлять ZapretGUI сам", "Update ZapretGUI by itself"), true, "download", L.T("без вопросов, при запуске", "without asking, on start"), false, rh);
+            rowGuiAutoUpdate.Click += delegate { GuiAutoUpdate = !GuiAutoUpdate; UpdateUi(); };
+            rowPortable = new SettingRowW(L.T("Переносной режим", "Portable mode"), true, "tray", L.T("настройки в ZapretGUI.ini рядом с программой", "settings in ZapretGUI.ini next to the app"), false, rh);
+            rowPortable.Click += delegate { TogglePortable(); };
+            rowShortcuts = new SettingRowW(L.T("Создать ярлыки", "Create shortcuts"), false, "monitor", L.T("на рабочем столе и в меню «Пуск»", "on the desktop and in the Start menu"), true, rh);
+            rowShortcuts.Click += delegate { CreateShortcuts(); };
+            rowRemoveAll = new SettingRowW(L.T("Удалить всё", "Remove everything"), false, "x", L.T("службу, задачи и настройки ZapretGUI", "the service, tasks and ZapretGUI settings"), true, rh);
+            rowRemoveAll.Click += delegate { RemoveEverything(); };
             rowServices = new SettingRowW(L.T("Свои сервисы на панели", "Own services on the panel"), false, "globe", L.T("следить не только за YouTube и Discord", "watch more than YouTube and Discord"), false, rh);
             rowServices.Click += delegate { ShowServicesMenu(); };
             rowIpsetAuto = new SettingRowW(L.T("Обновлять IPSet раз в неделю", "Update IPSet weekly"), true, "download", L.T("список адресов скачается сам", "the address list downloads by itself"), false, rh);
@@ -343,6 +360,7 @@ namespace ZapretGui
                 }
             }
             else if (svc) { t = L.T("Служба остановлена", "Service stopped"); s = L.T("нажмите кнопку, чтобы перезапустить", "click the button to restart"); b = W.Warn; }
+            else if (Paused) { t = L.T("Пауза до ", "Paused until ") + pauseUntil.ToString("HH:mm"); s = L.T("обход включится сам; кнопка — включить сейчас", "the bypass turns on by itself; the button turns it on now"); b = W.Warn; }
             else { t = L.T("Обход выключен", "Bypass is off"); s = L.T("нажмите кнопку, чтобы включить", "click the button to turn it on"); b = W.Text; }
             panelTitle.Text = t; panelTitle.Foreground = b; panelSub.Text = s;
         }

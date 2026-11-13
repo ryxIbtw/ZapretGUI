@@ -103,6 +103,12 @@ namespace ZapretGui
             UpdateServiceCards();
             rowServices.Value = Services.Count == 0 ? L.T("нет", "none") : string.Join(", ", Services.Select(s => s.Name));
             rowIpsetAuto.Checked = IpsetAuto;
+            rowHotkey.Checked = HotkeyOn;
+            rowGameQuiet.Checked = GameQuiet;
+            rowGuiAutoUpdate.Checked = GuiAutoUpdate;
+            rowPortable.Checked = Prefs.Portable;
+            rowProfiles.Value = Profiles.Count == 0 ? L.T("нет", "none") : Prefs.Get("Profile", "");
+            rowAutoApps.Value = AutoApps.Count == 0 ? L.T("нет", "none") : string.Join(", ", AutoApps.Select(a => Path.GetFileNameWithoutExtension(a)));
             rowSimple.Checked = simple;
             rowNotify.Checked = NotifyOn;
             rowAutoFix.Checked = AutoFixOn;
@@ -771,6 +777,9 @@ namespace ZapretGui
             WMenu.Add(m, L.T("IP-исключения (ipset-exclude-user)", "IP exclusions (ipset-exclude-user)"), false, () => EditList("ipset-exclude-user.txt"));
             WMenu.Sep(m);
             WMenu.Add(m, L.T("Стратегии", "Strategies"), false, ShowStrategies);
+            WMenu.Add(m, L.T("Профили…", "Profiles…"), false, () => ShowProfilesMenu(anchor));
+            WMenu.Add(m, Paused ? L.T("Пауза…", "Pause…") : L.T("Пауза обхода…", "Pause the bypass…"), false, () => ShowPauseMenu(anchor)).IsEnabled = Active || Paused;
+            WMenu.Add(m, L.T("Проверить сайт…", "Check a site…"), false, CheckSite);
             WMenu.Add(m, L.T("Результаты прошлого подбора", "Last strategy test results"), false, ShowLastPick);
             WMenu.Add(m, L.T("Статистика", "Statistics"), false, ShowStats);
             WMenu.Add(m, L.T("Журнал событий", "Event log"), false, ShowJournal);
@@ -941,7 +950,7 @@ namespace ZapretGui
             {
                 string remote = null;
                 try { remote = z.RemoteVersion(); } catch { }
-                if (!string.IsNullOrEmpty(remote) && remote != local) Post(() => { newVersion = remote; UpdateUi(); });
+                if (!string.IsNullOrEmpty(remote) && remote != local) Post(() => { newVersion = remote; UpdateUi(); OnUpdatesFound(); });
 
                 Version gui = null;
                 try { string url, sha; gui = SelfUpdate.Latest(out url, out sha); } catch { }
@@ -950,7 +959,7 @@ namespace ZapretGui
                     {
                         newGui = gui.ToString(3);
                         UpdateUi();
-                        Toast(L.T("Доступна ZapretGUI v" + newGui + " — Настройки → Обновления", "ZapretGUI v" + newGui + " is available — Settings → Updates"));
+                        OnUpdatesFound();   // баннер на панели или тихое автообновление
                     });
             });
         }

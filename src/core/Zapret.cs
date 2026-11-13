@@ -490,6 +490,34 @@ namespace ZapretGui
             return tag.Groups[1].Value.Trim();
         }
 
+        // Первый запуск без zapret: скачать последний релиз Flowseal и распаковать в папку dir.
+        public static void InstallFresh(string dir)
+        {
+            string url;
+            new Zapret(dir).LatestRelease(out url);
+            string tmp = Path.Combine(Path.GetTempPath(), "zapretgui-install-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(tmp);
+            try
+            {
+                string zip = Path.Combine(tmp, "release.zip");
+                ServicePointManager.SecurityProtocol |= (SecurityProtocolType)3072;
+                using (var wc = new WebClient()) { wc.Headers["User-Agent"] = "ZapretGUI"; wc.DownloadFile(url, zip); }
+                string ex = Path.Combine(tmp, "x");
+                System.IO.Compression.ZipFile.ExtractToDirectory(zip, ex);
+                string src = FindRootIn(ex, 3);
+                if (src == null) throw new Exception(L.T("В архиве нет service.bat", "service.bat not found in the archive"));
+                Directory.CreateDirectory(dir);
+                foreach (string f in Directory.GetFiles(src, "*", SearchOption.AllDirectories))
+                {
+                    string rel = f.Substring(src.Length).TrimStart('\\');
+                    string dst = Path.Combine(dir, rel);
+                    Directory.CreateDirectory(Path.GetDirectoryName(dst));
+                    if (!File.Exists(dst)) File.Copy(f, dst);   // ничего уже лежащего в папке не перезаписываем
+                }
+            }
+            finally { try { Directory.Delete(tmp, true); } catch { } }
+        }
+
         // Скачивает zip релиза и раскладывает поверх текущей папки,
         // сохраняя пользовательские списки, настройки и активные fake-файлы.
         // Обход перед вызовом должен быть остановлен.

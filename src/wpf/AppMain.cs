@@ -1,6 +1,7 @@
 // Точка входа версии на WPF: одна копия программы, поиск папки zapret, запуск окна (или сразу в трей).
 using System;
 using System.IO;
+using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -27,11 +28,14 @@ namespace ZapretGui
             L.Init();
             string rootArg = null, snap = null;
             bool hidden = false, scheduledPick = false;
-            int waitPid = 0;
+            int waitPid = 0, command = 0;   // команды для ярлыков: 1 — --on, 2 — --off, 3 — --toggle
             for (int i = 0; i < args.Length; i++)
             {
                 if (args[i] == "--tray") hidden = true;
                 else if (args[i] == "--scheduled-pick") { scheduledPick = true; hidden = true; }
+                else if (args[i] == "--on") { command = 1; hidden = true; }
+                else if (args[i] == "--off") { command = 2; hidden = true; }
+                else if (args[i] == "--toggle") { command = 3; hidden = true; }
                 else if (args[i] == "--root" && i + 1 < args.Length) rootArg = args[++i];
                 else if (args[i] == "--wait-pid" && i + 1 < args.Length) int.TryParse(args[++i], out waitPid);
 #if TESTHOOKS
@@ -49,7 +53,8 @@ namespace ZapretGui
                 if (!first && snap == null)
                 {
                     // программа уже запущена — передать ей просьбу (показать окно или подбор по расписанию)
-                    PostMessage((IntPtr)0xFFFF, scheduledPick ? MainWindow.WM_PICKNOW : MainWindow.WM_SHOWME, IntPtr.Zero, IntPtr.Zero);
+                    if (command > 0) PostMessage((IntPtr)0xFFFF, MainWindow.WM_COMMANDLINE, (IntPtr)command, IntPtr.Zero);
+                    else PostMessage((IntPtr)0xFFFF, scheduledPick ? MainWindow.WM_PICKNOW : MainWindow.WM_SHOWME, IntPtr.Zero, IntPtr.Zero);
                     return 0;
                 }
                 // приложение и тема — до поиска папки, чтобы окна первого запуска были в стиле программы
@@ -69,6 +74,13 @@ namespace ZapretGui
                 if (snap != null) { Snap.Run(w, snap); app.Run(); return 0; }
 #endif
                 if (!w.StartHidden) w.Show();
+                if (command > 0)
+                {
+                    int cmd = command;
+                    var tc = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+                    tc.Tick += delegate { tc.Stop(); w.RunCommand(cmd); };
+                    tc.Start();
+                }
                 if (scheduledPick)
                 {
                     // запустились ради подбора по расписанию — дать обходу и сети подняться, потом начать
@@ -87,9 +99,32 @@ namespace ZapretGui
             foreach (string c in new[] { arg, exeDir, Prefs.Get("Root", null) })
                 if (Zapret.IsValidRoot(c)) { Prefs.Set("Root", Path.GetFullPath(c)); return Path.GetFullPath(c); }
 
-            AskW.Show(null, L.T("Не найдена папка zapret-discord-youtube.\n\nПоложите ZapretGUI.exe рядом с service.bat или укажите папку вручную в следующем окне.",
-                "zapret-discord-youtube folder not found.\n\nPut ZapretGUI.exe next to service.bat or pick the folder in the next window."),
-                "Zapret", MessageBoxButton.OK, MessageBoxImage.Information);
+            // папки нет — предложить скачать zapret самим (Да) или указать папку (Нет)
+            var ans = AskW.Show(null, L.T("Не найдена папка zapret-discord-youtube.\n\nСкачать последнюю версию zapret от Flowseal с GitHub в папку C:\\zapret?\n\n«Да» — скачать, «Нет» — указать папку вручную.",
+                "zapret-discord-youtube folder not found.\n\nDownload the latest zapret by Flowseal from GitHub to C:\\zapret?\n\n“Yes” — download, “No” — pick the folder yourself."),
+                "Zapret", MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
+            if (ans == MessageBoxResult.Cancel) return null;
+            if (ans == MessageBoxResult.Yes)
+            {
+                string target = @"C:\zapret";
+                if (Directory.Exists(target) && Directory.EnumerateFileSystemEntries(target).Any() && !Zapret.IsValidRoot(target))
+                    target = @"C:\zapret-discord-youtube";
+                Exception err = null;
+                var wait = new Window { Title = "Zapret", Width = 360, Height = 120, WindowStartupLocation = WindowStartupLocation.CenterScreen, ResizeMode = ResizeMode.NoResize,
+                    Background = W.Bg, Content = new System.Windows.Controls.TextBlock { Text = L.T("Скачиваю zapret…", "Downloading zapret…"), Foreground = W.Text, FontSize = 14,
+                        HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center } };
+                var th = new Thread(() => { try { Zapret.InstallFresh(target); } catch (Exception ex) { err = ex; } wait.Dispatcher.BeginInvoke((Action)wait.Close); }) { IsBackground = true };
+                wait.Loaded += delegate { th.Start(); };
+                wait.ShowDialog();
+                if (err == null && Zapret.IsValidRoot(target))
+                {
+                    Journal.Add(L.T("zapret скачан в ", "zapret downloaded to ") + target);
+                    Prefs.Set("Root", target);
+                    return target;
+                }
+                AskW.Show(null, L.T("Не удалось скачать zapret: ", "Could not download zapret: ") + (err != null ? err.Message : "?") +
+                    L.T("\n\nУкажите папку вручную.", "\n\nPick the folder yourself."), "Zapret", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
             while (true)
             {
                 using (var d = new WF.FolderBrowserDialog { Description = L.T("Папка zapret-discord-youtube (где лежит service.bat)", "zapret-discord-youtube folder (with service.bat)") })

@@ -104,7 +104,10 @@ namespace ZapretGui
                 RefreshState();
                 Watchdog();
                 MaybeAutoUpdateIpset();
-                if (!netChecking && (DateTime.Now - lastNet).TotalSeconds > 60) CheckNet();
+                CheckAutoApps();
+                CheckPause();
+                // раз в минуту проверить сайты (но не во время полноэкранной игры, если включена «Тишина в играх»)
+                if (!netChecking && (DateTime.Now - lastNet).TotalSeconds > 60 && !(GameQuiet && FullscreenAppRunning())) CheckNet();
             };
             hintTimer.Tick += delegate { hintTimer.Stop(); if (hint != null) hint.Text = ""; };
 
@@ -113,8 +116,10 @@ namespace ZapretGui
                 WinBase.TitleBar(this);
                 var src = HwndSource.FromHwnd(new WindowInteropHelper(this).Handle);
                 if (src != null) src.AddHook(WndProc);
+                ApplyHotkey();
             };
             StateChanged += delegate { if (WindowState == WindowState.Minimized && tray != null && tray.Visible) Hide(); };
+            if (snapPath == null) RestorePosition();   // открыть там же, где закрыли
             // выход из Windows / перезагрузка: закрываться полностью, а не прятаться в трей
             if (Application.Current != null) Application.Current.SessionEnding += delegate { exitRequested = true; };
 
@@ -249,15 +254,16 @@ namespace ZapretGui
             if (!simple) { c1.Add(rowTiles); c1.Add(rowServices); }
             if (here("guistart")) c1.Add(rowGuiStart);
             if (here("tray")) c1.Add(rowTray);
+            c1.Add(rowHotkey); c1.Add(rowProfiles);
             sp.Children.Add(c1);
             group(L.T("Обход", "Bypass"));
             var c2 = new CardBox();
             foreach (string k in new[] { "auto", "watch", "game", "ipset" }) if (here(k)) c2.Add(RowFor(k));
-            c2.Add(rowNotify); c2.Add(rowAutoFix); c2.Add(rowSchedule); c2.Add(rowIpsetAuto);
+            c2.Add(rowNotify); c2.Add(rowAutoFix); c2.Add(rowSchedule); c2.Add(rowIpsetAuto); c2.Add(rowAutoApps); c2.Add(rowGameQuiet);
             c2.Add(rowFakes);
             sp.Children.Add(c2);
             group(L.T("Обслуживание", "Maintenance"));
-            var c3 = new CardBox(); c3.Add(rowDiag); c3.Add(rowUpdate); sp.Children.Add(c3);
+            var c3 = new CardBox(); c3.Add(rowDiag); c3.Add(rowUpdate); c3.Add(rowGuiAutoUpdate); c3.Add(rowPortable); c3.Add(rowShortcuts); c3.Add(rowRemoveAll); sp.Children.Add(c3);
 
             var foot = Footer(
                 Tuple.Create<string, Action<FlatLink>>(L.T("Журнал событий", "Event log"), l => ShowJournal()),
@@ -391,6 +397,31 @@ namespace ZapretGui
             WMenu.Add(m, L.T("Открыть", "Open"), false, ShowFromTray);
             var tog = WMenu.Add(m, picking ? L.T("Остановить подбор", "Stop testing") : Active ? L.T("Выключить", "Turn off") : L.T("Включить", "Turn on"), false, TogglePower);
             tog.IsEnabled = !busy || picking;
+            // стратегия — подменю (сначала избранные)
+            var sm = new MenuItem { Header = L.T("Стратегия: ", "Strategy: ") + selected, IsEnabled = !busy };
+            var fav = Favorites;
+            foreach (string s in strategies.Where(fav.Contains).Concat(strategies.Where(x => !fav.Contains(x))))
+            {
+                string name = s;
+                var it = new MenuItem { Header = (fav.Contains(name) ? "★ " : "") + name, IsChecked = name == selected };
+                it.Click += delegate { SelectStrategy(name); };
+                sm.Items.Add(it);
+            }
+            m.Items.Add(sm);
+            var pm = new MenuItem { Header = Paused ? L.T("Пауза до ", "Paused until ") + pauseUntil.ToString("HH:mm") : L.T("Пауза", "Pause"), IsEnabled = !busy && (Active || Paused) };
+            if (Paused) { var r = new MenuItem { Header = L.T("Включить сейчас", "Resume now") }; r.Click += delegate { pauseUntil = DateTime.Now; CheckPause(); }; pm.Items.Add(r); }
+            else foreach (int min in new[] { 15, 60, 180 })
+                {
+                    int mm = min;
+                    var it = new MenuItem { Header = min < 60 ? L.T("на " + min + " минут", "for " + min + " minutes") : L.T("на " + (min / 60) + " ч", "for " + (min / 60) + " h") };
+                    it.Click += delegate { Pause(mm); };
+                    pm.Items.Add(it);
+                }
+            m.Items.Add(pm);
+            WMenu.Sep(m);
+            WMenu.Add(m, L.T("Подобрать стратегию", "Find a strategy"), false, () => { ShowFromTray(); AutoPick(); }).IsEnabled = !busy;
+            WMenu.Add(m, L.T("Статистика", "Statistics"), false, () => { ShowFromTray(); ShowStats(); });
+            WMenu.Add(m, L.T("Проверить сайт…", "Check a site…"), false, () => { ShowFromTray(); CheckSite(); });
             WMenu.Sep(m);
             WMenu.Add(m, L.T("Выход", "Quit"), false, () => { exitRequested = true; Close(); });
             // чтобы меню закрывалось кликом мимо, его окно должно стать активным
@@ -478,6 +509,8 @@ namespace ZapretGui
         {
             if (msg == WM_SHOWME) ShowFromTray();
             else if (msg == WM_PICKNOW) Dispatcher.BeginInvoke((Action)ScheduledPick);   // задача планировщика
+            else if (msg == WM_COMMANDLINE) { int c = (int)w; Dispatcher.BeginInvoke((Action)(() => RunCommand(c))); }   // --on / --off / --toggle
+            else if (msg == 0x0312 && (int)w == HotkeyId) TogglePower();   // WM_HOTKEY: Ctrl+Alt+Z
             return IntPtr.Zero;
         }
 
@@ -485,6 +518,7 @@ namespace ZapretGui
         protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
         {
             // Крестик прячет окно в трей, если включена настройка. Выход из меню трея закрывает полностью.
+            SavePosition();
             if (!exitRequested && CloseToTray && snapPath == null)
             {
                 e.Cancel = true;
