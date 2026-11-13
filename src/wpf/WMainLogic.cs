@@ -104,6 +104,7 @@ namespace ZapretGui
             rowServices.Value = Services.Count == 0 ? L.T("нет", "none") : string.Join(", ", Services.Select(s => s.Name));
             rowIpsetAuto.Checked = IpsetAuto;
             rowHotkey.Checked = HotkeyOn;
+            rowActions.Value = string.Join(", ", ActionKeys.Select(ActionName));
             rowGameQuiet.Checked = GameQuiet;
             rowGuiAutoUpdate.Checked = GuiAutoUpdate;
             rowPortable.Checked = Prefs.Portable;
@@ -713,6 +714,20 @@ namespace ZapretGui
 
         void SetAccent(string name)
         {
+            if (name == "custom")
+            {
+                // свой цвет — выбрать в стандартном окне Windows
+                using (var d = new WF.ColorDialog { FullOpen = true, Color = System.Drawing.Color.FromArgb(Theme.CustomRgb | unchecked((int)0xFF000000)) })
+                {
+                    if (d.ShowDialog() != WF.DialogResult.OK) return;
+                    Prefs.Set("AccentCustom", (d.Color.ToArgb() & 0xFFFFFF).ToString("X6"));
+                }
+                Prefs.Set("Accent", name);
+                Theme.AccentName = name;
+                Theme.Apply(Theme.IsLight);
+                Recolor();
+                return;
+            }
             if (name == Theme.AccentName) return;
             Prefs.Set("Accent", name);
             Theme.AccentName = name;

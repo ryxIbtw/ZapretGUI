@@ -42,6 +42,7 @@ namespace ZapretGui
         StatBar todayBar;
         StatAxis todayAxis;
         bool netUp = true;
+        int todayCount = -1;
         internal Func<DateTime, List<StatRec>> StatsSource = Stats.LoadCached;
 
         void BuildPanelPage()
@@ -130,16 +131,19 @@ namespace ZapretGui
             }
             if (tiles.Count > 0) sp.Children.Add(grid);
 
-            // --- разделы ---
-            var acts = new UniformGrid { Columns = 4, Margin = new Thickness(-5, tiles.Count > 0 ? 5 : 10, -5, 0) };
-            ActionTile lists = null, more = null;
-            Action<ActionTile, Action> add = (t, a) => { t.Margin = new Thickness(5); t.Click += delegate { a(); }; acts.Children.Add(t); };
-            lists = new ActionTile("list", L.T("Списки", "Lists"));
-            add(lists, () => ShowListsMenu(lists));
-            add(new ActionTile("wrench", L.T("Диагностика", "Diagnostics")), OpenDiag);
-            add(new ActionTile("file", L.T("Журнал", "Log")), ShowJournal);
-            more = new ActionTile("dots", L.T("Ещё", "More"));
-            add(more, () => ShowMoreMenu(more));
+            // --- разделы: какие кнопки — выбирается в настройках, «Ещё» всегда последняя ---
+            var keys = ActionKeys;
+            var acts = new UniformGrid { Columns = keys.Count + 1, Margin = new Thickness(-5, tiles.Count > 0 ? 5 : 10, -5, 0) };
+            foreach (string k in keys)
+            {
+                var t = new ActionTile(ActionIcon(k), ActionName(k)) { Margin = new Thickness(5) };
+                string kk = k;
+                t.Click += delegate { RunAction(kk, t); };
+                acts.Children.Add(t);
+            }
+            var more = new ActionTile("dots", L.T("Ещё", "More")) { Margin = new Thickness(5) };
+            more.Click += delegate { ShowMoreMenu(more); };
+            acts.Children.Add(more);
             sp.Children.Add(acts);
 
             mainPage.Children.Add(sp);
@@ -153,7 +157,7 @@ namespace ZapretGui
         bool simple;
         List<string> tiles = new List<string>();
         SettingRowW rowSimple, rowTiles, rowNotify, rowAutoFix, rowSchedule, rowServices, rowIpsetAuto,
-            rowHotkey, rowProfiles, rowAutoApps, rowGameQuiet, rowGuiAutoUpdate, rowPortable, rowShortcuts, rowRemoveAll;
+            rowHotkey, rowProfiles, rowAutoApps, rowGameQuiet, rowGuiAutoUpdate, rowPortable, rowShortcuts, rowRemoveAll, rowActions;
 
         void LoadLayoutPrefs()
         {
@@ -208,6 +212,8 @@ namespace ZapretGui
             rowAutoFix = new SettingRowW(L.T("Автовосстановление", "Auto-recovery"), true, "shield", L.T("5 минут не работает — пробовать другие стратегии", "5 minutes down — try other strategies"), false, rh);
             rowSchedule = new SettingRowW(L.T("Подбор по расписанию", "Scheduled test"), true, "chart", L.T("воскресенье 4:00 · лучшая применится сама", "Sunday 4:00 · the best is applied"), false, rh);
             rowSchedule.Click += delegate { SetSchedule(!scheduleOn); };
+            rowActions = new SettingRowW(L.T("Кнопки внизу панели", "Buttons at the bottom"), false, "list", L.T("что показывать рядом с «Ещё»", "what to show next to “More”"), false, rh);
+            rowActions.Click += delegate { ShowActionsMenu(); };
             rowHotkey = new SettingRowW(L.T("Горячая клавиша Ctrl+Alt+Z", "Hotkey Ctrl+Alt+Z"), true, "power", L.T("включить или выключить обход откуда угодно", "turn the bypass on or off from anywhere"), false, rh);
             rowHotkey.Click += delegate { ToggleHotkey(); };
             rowProfiles = new SettingRowW(L.T("Профили", "Profiles"), false, "layers", L.T("стратегия, игровой фильтр и IPSet одним кликом", "strategy, game filter and IPSet in one click"), false, rh);
@@ -235,6 +241,21 @@ namespace ZapretGui
                 Journal.Add(AutoFixOn ? L.T("Автовосстановление включено", "Auto-recovery on") : L.T("Автовосстановление выключено", "Auto-recovery off"));
             };
 
+            // пояснения к сложным словам (значок «?»)
+            rowIpset.SetHelp(L.T("IPSet — обход не только по названиям сайтов, но и по IP-адресам из списка. «По списку» — только адреса из списка (обычно лучше всего), «Все IP» — весь трафик, «Выкл» — только по сайтам.",
+                "IPSet — bypass by IP addresses from a list, not only by site names. “List” — only listed addresses (usually best), “Any IP” — all traffic, “Off” — by site names only."));
+            rowGame.SetHelp(L.T("Игровой фильтр — обход ещё и для портов игр (1024 и выше). Нужен, если не работают голосовые чаты или онлайн-игры. Без надобности не включайте: обход затронет больше трафика.",
+                "Game filter — also bypass game ports (1024 and up). Turn it on if voice chats or online games don't work; otherwise leave it off, since it affects more traffic."));
+            rowFakes.SetHelp(L.T("Fake-файлы — «обманные» пакеты, которые zapret отправляет перед настоящими. Меняйте их, только если Discord или игры не подключаются.",
+                "Fake files — decoy packets zapret sends before the real ones. Change them only if Discord or games don't connect."));
+            rowWatch.SetHelp(L.T("Сторож следит, чтобы обход не выключился сам: если winws.exe упал, программа его перезапустит (не больше 3 раз за 5 минут).",
+                "The watchdog keeps the bypass running: if winws.exe crashes, the app restarts it (up to 3 times in 5 minutes)."));
+            rowAuto.SetHelp(L.T("Обход ставится службой Windows и включается сам при запуске компьютера, даже если программа закрыта.",
+                "The bypass is installed as a Windows service and starts with the PC, even if the app is closed."));
+            rowAutoFix.SetHelp(L.T("Если YouTube или Discord не открываются 5 минут подряд, программа сама пробует другие стратегии (сначала избранные), пока не заработает.",
+                "If YouTube or Discord don't open for 5 minutes, the app tries other strategies (favorites first) until one works."));
+            rowPortable.SetHelp(L.T("Настройки хранятся в файле ZapretGUI.ini рядом с программой, а не в реестре. Журнал и статистика остаются в %APPDATA%\\ZapretGUI.",
+                "Settings are stored in ZapretGUI.ini next to the app, not in the registry. The log and statistics stay in %APPDATA%\\ZapretGUI."));
             rowAuto.Click += delegate { ToggleAutostart(); };
             rowWatch.Click += delegate
             {
@@ -275,10 +296,30 @@ namespace ZapretGui
                 string k = key;
                 WMenu.Add(m, TileName(k), tiles.Contains(k), () =>
                 {
-                    var next = TileKeys.Where(x => x == k ? !tiles.Contains(k) : tiles.Contains(x)).ToList();   // порядок — как в списке
+                    var next = tiles.Contains(k) ? tiles.Where(x => x != k).ToList() : tiles.Concat(new[] { k }).ToList();   // свой порядок сохраняется
                     Prefs.Set("Tiles", string.Join(",", next));
                     RebuildLayout();
                 });
+            }
+            if (tiles.Count > 1)
+            {
+                // порядок плиток: поднять выбранную на одно место выше
+                WMenu.Sep(m);
+                var up = new System.Windows.Controls.MenuItem { Header = L.T("Переставить выше", "Move up") };
+                for (int i = 1; i < tiles.Count; i++)
+                {
+                    int idx = i;
+                    var it = new System.Windows.Controls.MenuItem { Header = TileName(tiles[i]) };
+                    it.Click += delegate
+                    {
+                        var next = tiles.ToList();
+                        string t = next[idx]; next[idx] = next[idx - 1]; next[idx - 1] = t;
+                        Prefs.Set("Tiles", string.Join(",", next));
+                        RebuildLayout();
+                    };
+                    up.Items.Add(it);
+                }
+                m.Items.Add(up);
             }
             WMenu.Sep(m);
             WMenu.Add(m, L.T("Как было по умолчанию", "Reset to default"), false, () => { Prefs.Set("Tiles", DefaultTiles); RebuildLayout(); });
@@ -317,6 +358,83 @@ namespace ZapretGui
             panelSub.TextWrapping = TextWrapping.Wrap; panelSub.TextAlignment = TextAlignment.Center; panelSub.TextTrimming = TextTrimming.None;
             panelSub.MaxWidth = 300; panelSub.FontSize = W.Body; panelSub.Margin = new Thickness(0, 6, 0, 0);
             mainPage.Children.Add(outer);
+        }
+
+        // ---------- кнопки нижнего ряда ----------
+
+        public static readonly string[] AllActions = { "lists", "diag", "journal", "stats", "strategies", "check", "pause" };
+        const string DefaultActions = "lists,diag,journal";
+
+        static List<string> ActionKeys
+        {
+            get
+            {
+                var r = Prefs.Get("Actions", DefaultActions).Split(',').Select(x => x.Trim()).Where(x => AllActions.Contains(x)).Distinct().Take(3).ToList();
+                return r;
+            }
+        }
+
+        static string ActionName(string k)
+        {
+            switch (k)
+            {
+                case "lists": return L.T("Списки", "Lists");
+                case "diag": return L.T("Диагностика", "Diagnostics");
+                case "journal": return L.T("Журнал", "Log");
+                case "stats": return L.T("Статистика", "Statistics");
+                case "strategies": return L.T("Стратегии", "Strategies");
+                case "check": return L.T("Проверить сайт", "Check a site");
+                default: return L.T("Пауза", "Pause");
+            }
+        }
+
+        static string ActionIcon(string k)
+        {
+            switch (k)
+            {
+                case "lists": return "list";
+                case "diag": return "wrench";
+                case "journal": return "file";
+                case "stats": return "chart";
+                case "strategies": return "spark";
+                case "check": return "search";
+                default: return "power";
+            }
+        }
+
+        void RunAction(string k, FrameworkElement anchor)
+        {
+            switch (k)
+            {
+                case "lists": ShowListsMenu(anchor); break;
+                case "diag": OpenDiag(); break;
+                case "journal": ShowJournal(); break;
+                case "stats": ShowStats(); break;
+                case "strategies": ShowStrategies(); break;
+                case "check": CheckSite(); break;
+                default: ShowPauseMenu(anchor); break;
+            }
+        }
+
+        void ShowActionsMenu()
+        {
+            var m = WMenu.Create();
+            var cur = ActionKeys;
+            WMenu.Header(m, L.T("До трёх кнопок, «Ещё» всегда последняя", "Up to three buttons, “More” is always last"));
+            foreach (string k in AllActions)
+            {
+                string kk = k;
+                var it = WMenu.Add(m, ActionName(kk), cur.Contains(kk), () =>
+                {
+                    var next = cur.Contains(kk) ? cur.Where(x => x != kk).ToList() : cur.Concat(new[] { kk }).ToList();
+                    if (next.Count > 3) next = next.Skip(next.Count - 3).ToList();
+                    Prefs.Set("Actions", string.Join(",", next));
+                    RebuildLayout();
+                });
+            }
+            WMenu.Sep(m);
+            WMenu.Add(m, L.T("Как было по умолчанию", "Reset to default"), false, () => { Prefs.Set("Actions", DefaultActions); RebuildLayout(); });
+            WMenu.ShowBelowRight(m, rowActions);
         }
 
         void ShowListsMenu(FrameworkElement anchor)
@@ -372,7 +490,12 @@ namespace ZapretGui
             DateTime from = DateTime.Today, to = from.AddDays(1);
             List<StatRec> recs;
             try { recs = StatsSource(from); } catch { recs = new List<StatRec>(); }
-            todayBar.Set(Stats.Segments(recs, 3, from, to), from, to, new List<DateTime>(), false);
+            var segs = Stats.Segments(recs, 3, from, to);
+            // появились новые данные — полоса мягко «вспыхивает»
+            if (recs.Count != todayCount && todayCount >= 0 && IsVisible)
+                todayBar.BeginAnimation(OpacityProperty, new System.Windows.Media.Animation.DoubleAnimation(0.55, 1, TimeSpan.FromMilliseconds(600)) { EasingFunction = Fx.Out });
+            todayCount = recs.Count;
+            todayBar.Set(segs, from, to, new List<DateTime>(), false);
             var ticks = new List<Tuple<DateTime, string>>();
             for (int h = 0; h <= 24; h += 6) ticks.Add(Tuple.Create(from.AddHours(h), h.ToString("00") + ":00"));
             todayAxis.Set(ticks, from, to);

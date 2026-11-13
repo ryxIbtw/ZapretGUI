@@ -120,6 +120,15 @@ namespace ZapretGui
             };
             StateChanged += delegate { if (WindowState == WindowState.Minimized && tray != null && tray.Visible) Hide(); };
             if (snapPath == null) RestorePosition();   // открыть там же, где закрыли
+            // Ctrl + колесо мыши — масштаб интерфейса
+            PreviewMouseWheel += (s, e) =>
+            {
+                if ((System.Windows.Input.Keyboard.Modifiers & System.Windows.Input.ModifierKeys.Control) == 0) return;
+                e.Handled = true;
+                int i = Array.IndexOf(Theme.Scales, UiScalePref);
+                int n = Math.Max(0, Math.Min(Theme.Scales.Length - 1, i + (e.Delta > 0 ? 1 : -1)));
+                if (n != i) { SetScale(Theme.Scales[n]); Toast(L.T("Масштаб ", "Scale ") + Theme.Scales[n] + "%"); }
+            };
             // выход из Windows / перезагрузка: закрываться полностью, а не прятаться в трей
             if (Application.Current != null) Application.Current.SessionEnding += delegate { exitRequested = true; };
 
@@ -251,7 +260,7 @@ namespace ZapretGui
             Func<string, bool> here = k => !tiles.Contains(k);
             group(L.T("Основное", "General"));
             var c1 = new CardBox(); c1.Add(rowLang); c1.Add(rowTheme); c1.Add(rowSimple);
-            if (!simple) { c1.Add(rowTiles); c1.Add(rowServices); }
+            if (!simple) { c1.Add(rowTiles); c1.Add(rowActions); c1.Add(rowServices); }
             if (here("guistart")) c1.Add(rowGuiStart);
             if (here("tray")) c1.Add(rowTray);
             c1.Add(rowHotkey); c1.Add(rowProfiles);

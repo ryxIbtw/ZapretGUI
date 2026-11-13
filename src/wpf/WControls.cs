@@ -302,6 +302,26 @@ namespace ZapretGui
         }
 
         public bool Divider { set { divider.Visibility = value ? Visibility.Visible : Visibility.Collapsed; } }
+
+        // Значок «?» рядом с названием: наведите — короткое объяснение сложного слова.
+        public void SetHelp(string text)
+        {
+            var texts = (StackPanel)title.Parent;
+            texts.Children.Remove(title);
+            var row = new StackPanel { Orientation = Orientation.Horizontal };
+            row.Children.Add(title);
+            var q = new Border
+            {
+                Width = 15, Height = 15, CornerRadius = new CornerRadius(8), Margin = new Thickness(6, 1, 0, 0), BorderThickness = new Thickness(1),
+                BorderBrush = W.Dim, Background = Brushes.Transparent, VerticalAlignment = VerticalAlignment.Center, Cursor = Cursors.Help,
+                Child = new TextBlock { Text = "?", FontSize = 10, Foreground = W.Muted, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, -1, 0, 0) },
+                ToolTip = new ToolTip { Content = new TextBlock { Text = text, TextWrapping = TextWrapping.Wrap, MaxWidth = 300 } },
+            };
+            ToolTipService.SetInitialShowDelay(q, 150);
+            ToolTipService.SetShowDuration(q, 30000);
+            row.Children.Add(q);
+            texts.Children.Insert(0, row);
+        }
         public string Hint
         {
             get { return hint.Text; }

@@ -13,7 +13,35 @@ namespace ZapretGui
 
         // Цвет акцента: auto — зелёный в тёмной теме и синий в светлой (как было раньше).
         public static string AccentName = "auto";
-        public static readonly string[] Accents = { "auto", "green", "blue", "purple", "orange", "pink" };
+        public static readonly string[] Accents = { "auto", "green", "blue", "purple", "orange", "pink", "windows", "custom" };
+        public static int CustomRgb = 0x34D399;   // свой цвет (AccentName = "custom")
+
+        // Цвет акцента Windows (Параметры → Персонализация → Цвета), как RGB; -1 — не удалось прочитать.
+        public static int WindowsAccentRgb()
+        {
+            try
+            {
+                using (var k = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\DWM"))
+                {
+                    object v = k == null ? null : k.GetValue("AccentColor");
+                    if (!(v is int)) return -1;
+                    int abgr = (int)v;
+                    return ((abgr & 0xFF) << 16) | (abgr & 0xFF00) | ((abgr >> 16) & 0xFF);
+                }
+            }
+            catch { return -1; }
+        }
+
+        // Для своего цвета и цвета Windows: подогнать яркость под тему, чтобы текст и кнопки читались.
+        static void ApplyFreeAccent(int rgb, bool light)
+        {
+            Color c = C(rgb);
+            float lum = (0.299f * c.R + 0.587f * c.G + 0.114f * c.B) / 255f;
+            if (!light && lum < 0.45f) c = Lerp(c, Color.White, 0.45f - lum);          // в тёмной теме слишком тёмный — осветлить
+            if (light && lum > 0.62f) c = Lerp(c, Color.Black, (lum - 0.62f) * 1.2f);  // в светлой слишком светлый — затемнить
+            Accent = c;
+            AccentDeep = light ? Lerp(c, Color.White, 0.88f) : Lerp(c, Bg, 0.82f);
+        }
         // тёмная: акцент, фон под акцентом; светлая: акцент, фон под акцентом
         static readonly System.Collections.Generic.Dictionary<string, int[]> Palette = new System.Collections.Generic.Dictionary<string, int[]>
         {
@@ -33,6 +61,8 @@ namespace ZapretGui
                 case "purple": return L.T("Фиолетовый", "Purple");
                 case "orange": return L.T("Оранжевый", "Orange");
                 case "pink": return L.T("Розовый", "Pink");
+                case "windows": return L.T("Как в Windows", "Like Windows");
+                case "custom": return L.T("Свой цвет…", "Custom…");
                 default: return L.T("Авто", "Auto");
             }
         }
@@ -41,6 +71,8 @@ namespace ZapretGui
         public static Color AccentSample(string name)
         {
             if (name == "auto") name = IsLight ? "blue" : "green";
+            if (name == "windows") { int w = WindowsAccentRgb(); return w >= 0 ? C(w) : C(0x0078D4); }
+            if (name == "custom") return C(CustomRgb);
             if (name == "blue" && IsLight) return C(0x2563EB);
             int[] p = Palette[name];
             return C(IsLight ? p[2] : p[0]);
@@ -90,7 +122,14 @@ namespace ZapretGui
                 }
             }
             int[] pal;
-            if (AccentName != "auto" && Palette.TryGetValue(AccentName, out pal))
+            if (AccentName == "windows") { int w = WindowsAccentRgb(); if (w >= 0) ApplyFreeAccent(w, light); }
+            else if (AccentName == "custom")
+            {
+                int v;
+                if (int.TryParse(Prefs.Get("AccentCustom", ""), System.Globalization.NumberStyles.HexNumber, null, out v)) CustomRgb = v;
+                ApplyFreeAccent(CustomRgb, light);
+            }
+            else if (AccentName != "auto" && Palette.TryGetValue(AccentName, out pal))
             {
                 Accent = C(light ? pal[2] : pal[0]);
                 AccentDeep = C(light ? pal[3] : pal[1]);
