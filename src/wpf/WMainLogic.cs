@@ -179,7 +179,9 @@ namespace ZapretGui
                     if (err != null)
                     {
                         // длинное объяснение (например, почему winws не запустился) — окном, а не строкой внизу
-                        if (err.Message.Length > 90 || err.Message.Contains("\n"))
+                        if (!IsVisible)
+                            Balloon(text.TrimEnd('…', '.'), err.Message.Length > 200 ? err.Message.Substring(0, 199) + "…" : err.Message, WF.ToolTipIcon.Warning);   // программа в трее — окно само не выскакивает
+                        else if (err.Message.Length > 90 || err.Message.Contains("\n"))
                         {
                             Toast(L.T("Не получилось — подробности в окне", "Failed — see the details"), true);
                             AskW.Show(this, err.Message, text.TrimEnd('…', '.'), MessageBoxButton.OK, MessageBoxImage.Warning);

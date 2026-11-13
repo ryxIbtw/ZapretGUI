@@ -79,6 +79,49 @@ Check 'подсеть принимается' ($n[0] -eq '1.2.3.0/24')
 $n = Norm 'не домен вовсе' $false
 Check 'мусор не принимается' ($n[0] -eq $null -or $n[0] -eq '')
 
+# ---------- статистика: новые отчёты ----------
+"Статистика (подробно)"
+$ol = $S.GetMethod('OutageList', $BF).Invoke($null, @($recs, 0, $from, $to))
+Check "список сбоев: один, ~10 минут (получилось $($ol.Count))" ($ol.Count -eq 1 -and [int]($ol[0].To - $ol[0].From).TotalMinutes -ge 9 -and $ol[0].Strategy -eq 'A')
+$ps = $S.GetMethod('PingSeries', $BF).Invoke($null, @($recs, $from, $to, 24))
+Check "пинг за 10-й час ~90 мс (получилось $([int]$ps[10]))" ($ps[10] -gt 80 -and $ps[10] -lt 100 -and $ps[3] -eq -1)
+$fh = $S.GetMethod('FailByHour', $BF).Invoke($null, @($recs, $from, $to))
+Check ("перебои в 10 часов ~17% (получилось {0:N2})" -f $fh[10]) ($fh[10] -gt 0.1 -and $fh[10] -lt 0.25 -and $fh[5] -eq -1)
+$csv = [string](Join-Path $tmp 'out.csv')
+$S.GetMethod('ExportCsv', $BF).Invoke($null, @($recs, $csv))
+$lines = Get-Content $csv
+Check "CSV: заголовок и все строки (строк $($lines.Count))" ($lines.Count -eq $recs.Count + 1 -and $lines[0] -like 'time;*')
+
+# ---------- причины ошибок winws ----------
+"Ошибки winws"
+$Z = T 'Zapret'
+$ex = $Z.GetMethod('ExplainWinws', $BF)
+$t1 = $ex.Invoke($null, @(5, 'error opening filter: Access is denied'))
+Check 'нет прав администратора' ($t1 -match 'администратор|administrator')
+$t2 = $ex.Invoke($null, @(577, 'driver signature'))
+Check 'драйвер заблокирован' ($t2 -match 'WinDivert')
+$t3 = $ex.Invoke($null, @(1, 'unknown option --foo'))
+Check 'неизвестный параметр стратегии' ($t3 -match 'параметр|option')
+Check 'в тексте есть сообщение winws' ($t3 -match 'unknown option --foo')
+
+# ---------- переносной режим (файл рядом с тестовой сборкой) ----------
+"Настройки"
+$P = T 'Prefs'
+$iniPath = $P.GetProperty('IniPath', $BF).GetValue($null)
+Check "файл настроек рядом с exe ($iniPath)" ($iniPath -like "$tmp*" -or (Split-Path $iniPath) -eq (Split-Path $Exe))
+if ((Split-Path $iniPath) -eq (Split-Path $Exe) -and -not (Test-Path $iniPath)) {
+    [IO.File]::WriteAllText($iniPath, "# test`r`nLang=en`r`nNote:general=лучшая вечером`r`n", (New-Object Text.UTF8Encoding $false))
+    Check 'переносной режим виден' ($P.GetProperty('Portable', $BF).GetValue($null))
+    Check 'чтение из ini' ($P.GetMethod('Get', $BF).Invoke($null, @('Lang', 'ru')) -eq 'en' -and $P.GetMethod('Get', $BF).Invoke($null, @('Note:general', '')) -eq 'лучшая вечером')
+    $P.GetMethod('Set', $BF).Invoke($null, @('Theme', 'dark'))
+    Check 'запись в ini, а не в реестр' ((Get-Content $iniPath -Encoding UTF8) -contains 'Theme=dark')
+    Remove-Item $iniPath -Force
+} else { "  пропущено: тестовая сборка лежит не во временной папке" }
+
+# ---------- DNS (только чтение) ----------
+$dns = (T 'Diag').GetMethod('DnsCheck', $BF).Invoke($null, @())
+Check "проверка DNS отвечает: $($dns.Title)" ($dns -ne $null -and $dns.Title -ne '')
+
 # ---------- описание релиза ----------
 "Разное"
 $un = (T 'SelfUpdate').GetMethod('JsonUnescape', $BF).Invoke($null, @('a\nb \"c\" Ж'))
