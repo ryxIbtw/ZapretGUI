@@ -220,12 +220,13 @@ namespace ZapretGui
 
         static Color Darker(Color c, float k) { return Color.FromArgb(c.A, (int)(c.R * k), (int)(c.G * k), (int)(c.B * k)); }
 
-        // state: 0 — выключено (серый), 1 — включено (акцент), 2 — идёт подбор/операция (акцент + жёлтая точка)
+        // state: 0 — выключено (серый), 1 — включено (акцент), 2 — идёт подбор/операция (акцент + жёлтая точка),
+        // 3 — включено, но YouTube или Discord не открываются (акцент + красная точка)
         public static Icon MakeIcon(int size, int state)
         {
             Color top = state == 0 ? C(0x6B6E76) : Accent;
             Color bottom = state == 0 ? C(0x45474E) : Darker(Accent, 0.72f);
-            Color dot = state == 2 ? C(0xFBBF24) : Color.Empty;
+            Color dot = state == 2 ? C(0xFBBF24) : state == 3 ? C(0xEF4444) : Color.Empty;
             using (var bmp = Logo(size, top, bottom, dot)) return Icon.FromHandle(bmp.GetHicon());
         }
     }

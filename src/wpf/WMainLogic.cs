@@ -101,6 +101,8 @@ namespace ZapretGui
             }
             if (picker != null) picker.SetValue(selected);
             rowSimple.Checked = simple;
+            rowNotify.Checked = NotifyOn;
+            rowAutoFix.Checked = AutoFixOn;
             rowTiles.Value = tiles.Count + L.T(" из ", " of ") + TileKeys.Length;
             rowAuto.Checked = autostart;
             rowGame.Value = GameLabel(z.GameMode);
@@ -119,8 +121,8 @@ namespace ZapretGui
             if (newVersion != null) { version.Text = "↑ v" + newVersion; version.Foreground = W.Accent; version.Cursor = System.Windows.Input.Cursors.Hand; }
             else { version.Text = lv == "" ? "" : "v" + lv; version.Foreground = W.Dim; version.Cursor = null; }
 
-            tray.Icon = busy || picking ? iconBusy : running ? iconOn : iconOff;
-            tray.Text = "Zapret" + (running ? L.T(" — включено", " — on") : L.T(" — выключено", " — off")) + "\nGUI by " + BrandHeader.Author;
+            tray.Icon = TrayIcon();
+            tray.Text = TrayTip();
             SyncFlyout();
         }
 
@@ -164,7 +166,13 @@ namespace ZapretGui
                     if (!spinner) hint.Text = "";
                     if (err != null)
                     {
-                        Toast(err.Message, true);
+                        // длинное объяснение (например, почему winws не запустился) — окном, а не строкой внизу
+                        if (err.Message.Length > 90 || err.Message.Contains("\n"))
+                        {
+                            Toast(L.T("Не получилось — подробности в окне", "Failed — see the details"), true);
+                            AskW.Show(this, err.Message, text.TrimEnd('…', '.'), MessageBoxButton.OK, MessageBoxImage.Warning);
+                        }
+                        else Toast(err.Message, true);
                         Journal.Add(L.T("Ошибка (", "Error (") + text.TrimEnd('…', '.') + "): " + err.Message);
                     }
                     else if (done != null) done();
@@ -195,7 +203,8 @@ namespace ZapretGui
             {
                 expectRunning = true;
                 Journal.Add(L.T("Обход включён: ", "Bypass on: ") + name + (asSvc ? L.T(" (служба)", " (service)") : ""));
-                CheckNetSoon();
+                justStarted = true;   // через несколько секунд проверить, открываются ли сайты
+                CheckNetSoon(6000);
             });
         }
 
@@ -285,9 +294,11 @@ namespace ZapretGui
 
         // ---------- Доступность сайтов ----------
 
-        void CheckNetSoon()
+        void CheckNetSoon() { CheckNetSoon(2500); }
+
+        void CheckNetSoon(int ms)
         {
-            var t = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(2500) };
+            var t = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(ms) };
             t.Tick += delegate { t.Stop(); CheckNet(); };
             t.Start();
         }
@@ -330,6 +341,7 @@ namespace ZapretGui
                     if (running && wasOk && !ok && net)
                         Toast(L.T("YouTube или Discord перестал открываться — попробуйте «Подобрать стратегию»",
                                   "YouTube or Discord stopped working — try “Find a strategy”"), true);
+                    OnNetResult(ok, net);   // уведомления, автовосстановление, проверка после включения
                     UpdateUi();
                 });
             });

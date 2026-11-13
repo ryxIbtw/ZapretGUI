@@ -33,7 +33,7 @@ namespace ZapretGui
         IconButton gear, themeBtn;
         TextBlock version, hint;
         WF.NotifyIcon tray;
-        System.Drawing.Icon iconOn, iconOff, iconBusy, iconApp;
+        System.Drawing.Icon iconOn, iconOff, iconBusy, iconBad, iconApp;
         FlyoutW flyout;
         DateTime flyoutClosedAt = DateTime.MinValue;
         bool settingsOpen, welcomeActive;
@@ -93,6 +93,7 @@ namespace ZapretGui
             BuildUi();
             RefreshState();
             expectRunning = running;
+            if (snapPath == null) WatchServiceOnStart();
             power.SetOn(running, false);
             Journal.Add(L.T("Программа запущена, ZapretGUI v", "App started, ZapretGUI v") + SelfUpdate.Current.ToString(3) + ", zapret v" + z.LocalVersion +
                 (running ? L.T(" · обход уже включён: ", " · bypass already on: ") + (activeStrategy ?? "?") : L.T(" · обход выключен", " · bypass off")));
@@ -128,6 +129,7 @@ namespace ZapretGui
                 if (z.UpdatesEnabled) CheckUpdates();
                 CheckStrategyChanges();   // zapret обновили, пока программы не было? — покажем, когда окно появится
                 CheckGuiUpdated();        // сама программа обновилась — покажем описание релиза
+                QuietDiagSoon();          // через 8 секунд тихо проверить конфликты (только чтение)
                 ContentRendered += delegate { Dispatcher.BeginInvoke((Action)ShowPendingNews); };
             }
             new WindowInteropHelper(this).EnsureHandle();   // окно существует даже при запуске в трее
@@ -158,8 +160,9 @@ namespace ZapretGui
         void BuildUi()
         {
             LoadLayoutPrefs();
-            cardYt = cardDc = null; picker = null; todayBar = null;
+            cardYt = cardDc = null; picker = null; todayBar = null; banner = null;
             var root = new Grid { Width = Wd, Height = Ht, Background = W.Bg, LayoutTransform = rootScale };
+            rootGrid = root;
             rootScale.ScaleX = rootScale.ScaleY = Theme.UiScale;
             root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             root.RowDefinitions.Add(new RowDefinition());
@@ -248,6 +251,7 @@ namespace ZapretGui
             group(L.T("Обход", "Bypass"));
             var c2 = new CardBox();
             foreach (string k in new[] { "auto", "watch", "game", "ipset" }) if (here(k)) c2.Add(RowFor(k));
+            c2.Add(rowNotify); c2.Add(rowAutoFix);
             c2.Add(rowFakes);
             sp.Children.Add(c2);
             group(L.T("Обслуживание", "Maintenance"));
@@ -409,7 +413,11 @@ namespace ZapretGui
         void SyncFlyout()
         {
             if (flyout == null) return;
-            flyout.Sync(running, busy, picking ? pickProgress : -1, statusText, statusBrush, subText, netYt, netDc, netChecking,
+            // тот же понятный статус, что на главном экране («Обход работает», «YouTube не открывается»)
+            string st = panelTitle != null ? panelTitle.Text : statusText;
+            Brush sb = panelTitle != null ? panelTitle.Foreground : statusBrush;
+            string sub = panelSub != null ? panelSub.Text : subText;
+            flyout.Sync(running, busy, picking ? pickProgress : -1, st, sb, sub, netYt, netDc, netChecking,
                 NetMeta(0, NetCheck.YouTube.Length), NetMeta(NetCheck.YouTube.Length, NetCheck.Discord.Length), selected);
         }
 
@@ -419,14 +427,15 @@ namespace ZapretGui
             float dpi = 1f;
             try { using (var g = System.Drawing.Graphics.FromHwnd(IntPtr.Zero)) dpi = g.DpiX / 96f; } catch { }
             int small = Math.Max(16, (int)Math.Round(16 * dpi));
-            var old = new[] { iconApp, iconOn, iconOff, iconBusy };
+            var old = new[] { iconApp, iconOn, iconOff, iconBusy, iconBad };
             iconApp = Theme.MakeIcon((int)Math.Round(32 * dpi), 1);
             iconOn = Theme.MakeIcon(small, 1);
             iconOff = Theme.MakeIcon(small, 0);
             iconBusy = Theme.MakeIcon(small, 2);
+            iconBad = Theme.MakeIcon(small, 3);
             Icon = Imaging.CreateBitmapSourceFromHIcon(iconApp.Handle, Int32Rect.Empty, BitmapSizeOptions.FromEmptyOptions());
             // старые значки (после смены темы) освобождаем — трей сначала получает новый
-            if (tray != null) tray.Icon = busy || picking ? iconBusy : running ? iconOn : iconOff;
+            if (tray != null) tray.Icon = TrayIcon();
             foreach (var ic in old) if (ic != null) { try { DestroyIcon(ic.Handle); } catch { } ic.Dispose(); }
         }
 

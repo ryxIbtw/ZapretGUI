@@ -75,6 +75,17 @@ namespace ZapretGui
             circle.Children.Add(glyphOff); circle.Children.Add(glyphOn); circle.Children.Add(spinner);
             stage.Children.Add(circle);
 
+            // с клавиатуры: Tab до кнопки, Enter или пробел — нажать
+            circle.Focusable = true;
+            circle.FocusVisualStyle = null;
+            circle.GotKeyboardFocus += delegate { if (InputManager.Current.MostRecentInputDevice is KeyboardDevice) { baseFill.Stroke = W.Accent; baseFill.StrokeThickness = 3; } };
+            circle.LostKeyboardFocus += delegate { baseFill.Stroke = W.Line; baseFill.StrokeThickness = 2; };
+            circle.KeyDown += (s, e) =>
+            {
+                if (e.Key != Key.Enter && e.Key != Key.Space) return;
+                e.Handled = true;
+                var h = Click; if (h != null) h(this, EventArgs.Empty);
+            };
             circle.MouseEnter += delegate { hot = true; UpdateHover(); };
             circle.MouseLeave += delegate { hot = false; down = false; UpdateHover(); Press(false); };
             circle.MouseLeftButtonDown += (s, e) => { down = true; Press(true); e.Handled = true; };

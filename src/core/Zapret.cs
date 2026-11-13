@@ -165,9 +165,67 @@ namespace ZapretGui
             var p = Process.Start(psi);
             Thread.Sleep(1200);
             if (p.HasExited)
-                throw new Exception(L.T("winws.exe сразу завершился (код " + p.ExitCode + "). Попробуйте другую стратегию или диагностику.",
-                    "winws.exe exited immediately (code " + p.ExitCode + "). Try another strategy or run diagnostics."));
+            {
+                int code = p.ExitCode;
+                // запустить ещё раз, уже с чтением вывода, — чтобы узнать причину (обычный запуск вывод не читает:
+                // winws работает долго, и читать его вывод всё время незачем)
+                string output = ProbeWinwsError(args);
+                throw new Exception(ExplainWinws(code, output));
+            }
             return p.Id;
+        }
+
+        string ProbeWinwsError(string args)
+        {
+            try
+            {
+                var psi = new ProcessStartInfo(Winws, args)
+                {
+                    WorkingDirectory = Bin, UseShellExecute = false, CreateNoWindow = true,
+                    RedirectStandardOutput = true, RedirectStandardError = true,
+                };
+                using (var p = Process.Start(psi))
+                {
+                    var err = p.StandardError.ReadToEndAsync();
+                    var outp = p.StandardOutput.ReadToEndAsync();
+                    if (!p.WaitForExit(3000)) { try { p.Kill(); } catch { } return ""; }   // в этот раз запустился — значит, сбой был случайный
+                    return (outp.Result + "\n" + err.Result).Trim();
+                }
+            }
+            catch { return ""; }
+        }
+
+        // Понятная причина по коду выхода и сообщениям winws.exe.
+        public static string ExplainWinws(int code, string output)
+        {
+            string o = (output ?? "").ToLowerInvariant();
+            string why;
+            if (o.Contains("access is denied") || o.Contains("отказано в доступе") || code == 5)
+                why = L.T("Нет прав: программу нужно запускать от имени администратора.", "Access denied: the app must run as administrator.");
+            else if (o.Contains("signature") || o.Contains("подпис") || code == 577 || code == 1275)
+                why = L.T("Windows или антивирус не дал загрузить драйвер WinDivert. Добавьте папку zapret в исключения антивируса.",
+                          "Windows or an antivirus blocked the WinDivert driver. Add the zapret folder to the antivirus exclusions.");
+            else if (o.Contains("windivert") && (o.Contains("not found") || o.Contains("cannot find") || o.Contains("не найден") || code == 2))
+                why = L.T("Не найден драйвер WinDivert в папке bin. Обновите zapret или проверьте, не удалил ли его антивирус.",
+                          "The WinDivert driver is missing from the bin folder. Update zapret or check whether an antivirus removed it.");
+            else if (o.Contains("already") || o.Contains("in use") || code == 32)
+                why = L.T("Похоже, уже работает другая программа обхода или копия winws. Закройте её и попробуйте снова.",
+                          "Another bypass program or winws copy seems to be running. Close it and try again.");
+            else if (o.Contains("file") && (o.Contains("not found") || o.Contains("cannot open") || o.Contains("can't open")))
+                why = L.T("Стратегия ссылается на файл, которого нет (список или fake-файл). Попробуйте другую стратегию или обновите zapret.",
+                          "The strategy refers to a missing file (list or fake file). Try another strategy or update zapret.");
+            else if (o.Contains("invalid") || o.Contains("unknown option") || o.Contains("unrecognized"))
+                why = L.T("В стратегии есть параметр, который эта версия winws не понимает. Обновите zapret или выберите другую стратегию.",
+                          "The strategy has an option this winws version doesn't understand. Update zapret or pick another strategy.");
+            else
+                why = L.T("Попробуйте другую стратегию или диагностику.", "Try another strategy or run diagnostics.");
+            string last = "";
+            if (!string.IsNullOrEmpty(output))
+            {
+                var lines = output.Replace("\r", "").Split('\n').Where(l => l.Trim() != "").ToList();
+                if (lines.Count > 0) last = "\n" + L.T("Сообщение winws: ", "winws says: ") + lines[lines.Count - 1].Trim();
+            }
+            return L.T("winws.exe сразу завершился (код " + code + "). ", "winws.exe exited immediately (code " + code + "). ") + why + last;
         }
 
         public void StopAll(bool full)

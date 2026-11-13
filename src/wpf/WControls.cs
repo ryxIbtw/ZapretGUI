@@ -67,6 +67,16 @@ namespace ZapretGui
         {
             Cursor = Cursors.Hand;
             Background = Brushes.Transparent;
+            // с клавиатуры: Tab — перейти, Enter или пробел — нажать; фокус показывается рамкой
+            Focusable = true;
+            FocusVisualStyle = null;
+            KeyboardNavigation.SetIsTabStop(this, true);
+            GotKeyboardFocus += delegate { if (InputManager.Current.MostRecentInputDevice is KeyboardDevice) ShowFocus(true); };
+            LostKeyboardFocus += delegate { ShowFocus(false); };
+            KeyDown += (s, e) =>
+            {
+                if (e.Key == Key.Enter || e.Key == Key.Space) { e.Handled = true; RaiseClick(); }
+            };
             MouseEnter += delegate { Hot = true; OnHot(true); };
             MouseLeave += delegate { Hot = false; down = false; OnHot(false); OnPress(false); };
             MouseLeftButtonDown += (s, e) => { down = true; OnPress(true); e.Handled = true; };
@@ -78,6 +88,15 @@ namespace ZapretGui
         }
         protected virtual void OnHot(bool on) { }
         protected virtual void OnPress(bool on) { }
+
+        Brush savedBorder; Thickness savedThick; bool focusShown;
+        void ShowFocus(bool on)
+        {
+            if (on == focusShown) return;
+            focusShown = on;
+            if (on) { savedBorder = BorderBrush; savedThick = BorderThickness; BorderBrush = W.Accent; BorderThickness = new Thickness(1.5); OnHot(true); }
+            else { BorderBrush = savedBorder; BorderThickness = savedThick; if (!IsMouseOver) OnHot(false); }
+        }
         public void RaiseClick() { var h = Click; if (h != null) h(this, EventArgs.Empty); }
     }
 

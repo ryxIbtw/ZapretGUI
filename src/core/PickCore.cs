@@ -43,7 +43,7 @@ namespace ZapretGui
         public int Level { get { return Ratio >= 0.999 ? 2 : Works ? 1 : 0; } }
 
         // Как у Flowseal: больше всего успешных проверок, при равенстве — больше ответов на пинг.
-        // При полном равенстве остаётся порядок проверки (у Flowseal порядок при равенстве случайный).
+        // Если и это равно — быстрее та, у которой выше скорость (у Flowseal порядок при равенстве случайный).
         // Старые результаты (до 2.1) — по прежнему правилу.
         public static List<PickResult> Rank(IEnumerable<PickResult> list)
         {
@@ -52,11 +52,19 @@ namespace ZapretGui
                 return all.OrderBy(r => r.Failed ? 1 : 0)
                           .ThenByDescending(r => r.Ok)
                           .ThenByDescending(r => r.PingOk)
+                          .ThenByDescending(r => r.SpeedKBps)
                           .ToList();
             return all.OrderByDescending(r => Math.Round(r.Ratio, 3))
                       .ThenByDescending(r => r.SpeedKBps)
                       .ThenBy(r => r.AvgMs)
                       .ToList();
+        }
+
+        // Тот же результат проверок, что у b (без учёта скорости) — «наравне».
+        public bool SameScore(PickResult b)
+        {
+            if (b == null || Failed || b.Failed || !IsNew || !b.IsNew) return false;
+            return Ok == b.Ok && PingOk == b.PingOk && Blocked == b.Blocked;
         }
 
         public static string FormatSpeed(double kbps)

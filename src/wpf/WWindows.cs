@@ -58,6 +58,7 @@ namespace ZapretGui
             sp.Children.Add(power);
             status = W.T("", W.Status, W.Text, true); status.HorizontalAlignment = HorizontalAlignment.Center; status.Margin = new Thickness(0, 2, 0, 0);
             sub = W.T("", W.Small, W.Muted); sub.HorizontalAlignment = HorizontalAlignment.Center; sub.Margin = new Thickness(14, 1, 14, 0);
+            sub.TextWrapping = TextWrapping.Wrap; sub.TextAlignment = TextAlignment.Center; sub.TextTrimming = TextTrimming.None;
             sp.Children.Add(status); sp.Children.Add(sub);
 
             var cards = new Grid { Margin = new Thickness(14, 12, 14, 0) };
@@ -293,7 +294,17 @@ namespace ZapretGui
             sp.Children.Add(head);
 
             var list = new StackPanel();
-            for (int i = 0; i < ranked.Count; i++) list.Children.Add(Row(ranked[i], i + 1, PickHistory.LevelsFor(ranked[i].Name, history, HistoryDots)));
+            var best = ranked.FirstOrDefault(r => r.Works);
+            int ties = ranked.Count(r => r != best && r.SameScore(best));
+            for (int i = 0; i < ranked.Count; i++)
+                list.Children.Add(Row(ranked[i], i + 1, PickHistory.LevelsFor(ranked[i].Name, history, HistoryDots), ranked[i] != best && ranked[i].SameScore(best)));
+            if (ties > 0)
+                sp.Children.Insert(2, new TextBlock
+                {
+                    Text = L.T("«=1» — результат такой же, как у лучшей (" + ties + " шт.). Из них первой стоит самая быстрая.",
+                               "“=1” — same result as the best (" + ties + "). The fastest of them is first."),
+                    TextWrapping = TextWrapping.Wrap, Foreground = W.Accent, FontSize = W.Small, Margin = new Thickness(0, -4, 0, 10),
+                });
             sp.Children.Add(new ScrollViewer { Content = list, Height = 430, VerticalScrollBarVisibility = ScrollBarVisibility.Auto });
 
             var bar = new Grid { Margin = new Thickness(0, 14, 0, 0) };
@@ -324,11 +335,11 @@ namespace ZapretGui
         }
         bool applied;
 
-        Border Row(PickResult r, int rank, List<int> past)
+        Border Row(PickResult r, int rank, List<int> past, bool tie)
         {
             var g = Cols();
             Func<int, int, Brush> ratio = (ok, max) => ok >= max ? W.Accent : ok > 0 ? W.Warn : W.Danger;
-            Cell(g, 0, rank.ToString(), W.Small, W.Dim);
+            Cell(g, 0, tie ? "=1" : rank.ToString(), W.Small, tie ? W.Accent : W.Dim);
             Cell(g, 1, r.Name, r.Works && rank == 1 ? W.BodyStrong : W.Body, r.Works ? W.Text : W.Dim, r.Works && rank == 1);
             int histCol = mode == "" ? 6 : 7;
             if (r.Failed) { var f = Cell(g, 2, L.T("не запустилась", "failed to start"), W.Small, W.Dim); Grid.SetColumnSpan(f, histCol - 2); }

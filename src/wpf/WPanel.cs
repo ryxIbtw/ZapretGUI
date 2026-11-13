@@ -42,11 +42,12 @@ namespace ZapretGui
         StatBar todayBar;
         StatAxis todayAxis;
         bool netUp = true;
-        internal Func<DateTime, List<StatRec>> StatsSource = Stats.Load;
+        internal Func<DateTime, List<StatRec>> StatsSource = Stats.LoadCached;
 
         void BuildPanelPage()
         {
             var sp = new StackPanel { Margin = new Thickness(20, 2, 20, 0) };
+            sp.Children.Add(BuildBanner());   // строка-предупреждение (обновление, проблема, сбой) — скрыта, пока не нужна
 
             // --- состояние: кнопка, крупный текст, «Подобрать» ---
             var hero = new Border { Background = W.Surface, CornerRadius = new CornerRadius(16), Padding = new Thickness(6, 8, 16, 8) };
@@ -149,7 +150,7 @@ namespace ZapretGui
         const string DefaultTiles = "auto,watch,game,ipset";
         bool simple;
         List<string> tiles = new List<string>();
-        SettingRowW rowSimple, rowTiles;
+        SettingRowW rowSimple, rowTiles, rowNotify, rowAutoFix;
 
         void LoadLayoutPrefs()
         {
@@ -200,6 +201,14 @@ namespace ZapretGui
             rowFakes = new SettingRowW(L.T("Fake-файлы", "Fake files"), false, "layers", L.T("подмена пакетов для Discord и игр", "fake packets for Discord and games"), false, rh);
             rowDiag = new SettingRowW(L.T("Диагностика", "Diagnostics"), false, "wrench", L.T("конфликты, прокси, DNS, драйвер", "conflicts, proxy, DNS, driver"), true, rh);
             rowUpdate = new SettingRowW(L.T("Обновления", "Updates"), false, "download", "", false, rh);
+            rowNotify = new SettingRowW(L.T("Сообщать о сбоях", "Notify about problems"), true, "alert", L.T("уведомление из трея, когда сайты перестали открываться", "tray message when sites stop opening"), false, rh);
+            rowAutoFix = new SettingRowW(L.T("Автовосстановление", "Auto-recovery"), true, "shield", L.T("5 минут не работает — пробовать другие стратегии", "5 minutes down — try other strategies"), false, rh);
+            rowNotify.Click += delegate { NotifyOn = !NotifyOn; UpdateUi(); };
+            rowAutoFix.Click += delegate
+            {
+                AutoFixOn = !AutoFixOn; autoTried.Clear(); badStreak = 0; UpdateUi();
+                Journal.Add(AutoFixOn ? L.T("Автовосстановление включено", "Auto-recovery on") : L.T("Автовосстановление выключено", "Auto-recovery off"));
+            };
 
             rowAuto.Click += delegate { ToggleAutostart(); };
             rowWatch.Click += delegate
@@ -267,7 +276,13 @@ namespace ZapretGui
         // Простой режим: только большая кнопка и статус обычными словами.
         void BuildSimplePage()
         {
+            var outer = new Grid();
+            var top = BuildBanner();
+            ((Border)top).Margin = new Thickness(16, 0, 16, 0);
+            top.VerticalAlignment = VerticalAlignment.Top;
+            outer.Children.Add(top);
             var sp = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 0, 30) };
+            outer.Children.Add(sp);
             power = new PowerHero(140);
             power.Click += delegate { TogglePower(); };
             sp.Children.Add(power);
@@ -276,7 +291,7 @@ namespace ZapretGui
             panelTitle.Margin = new Thickness(0, 4, 0, 0);
             panelSub.TextWrapping = TextWrapping.Wrap; panelSub.TextAlignment = TextAlignment.Center; panelSub.TextTrimming = TextTrimming.None;
             panelSub.MaxWidth = 300; panelSub.FontSize = W.Body; panelSub.Margin = new Thickness(0, 6, 0, 0);
-            mainPage.Children.Add(sp);
+            mainPage.Children.Add(outer);
         }
 
         void ShowListsMenu(FrameworkElement anchor)

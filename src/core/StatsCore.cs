@@ -99,6 +99,46 @@ namespace ZapretGui
             return r;
         }
 
+        // Как Load, но дочитывает только новые строки файла (для полосы «Сегодня», которая обновляется раз в минуту).
+        static List<StatRec> cache;
+        static long cachePos;
+        static DateTime cacheFrom = DateTime.MaxValue;
+        static string cachePath;
+        public static List<StatRec> LoadCached(DateTime from)
+        {
+            lock (sync)
+            {
+                try
+                {
+                    if (!File.Exists(FilePath)) return new List<StatRec>();
+                    long len = new FileInfo(FilePath).Length;
+                    bool fresh = cache == null || cachePath != FilePath || from < cacheFrom || len < cachePos;
+                    if (fresh) { cache = new List<StatRec>(); cachePos = 0; cacheFrom = from; cachePath = FilePath; }
+                    if (len > cachePos)
+                        using (var fs = new FileStream(FilePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                        {
+                            fs.Seek(cachePos, SeekOrigin.Begin);
+                            var buf = new byte[len - cachePos];
+                            int n = 0, r;
+                            while (n < buf.Length && (r = fs.Read(buf, n, buf.Length - n)) > 0) n += r;
+                            string text = Encoding.UTF8.GetString(buf, 0, n);
+                            int lastNl = text.LastIndexOf('\n');
+                            if (lastNl >= 0)
+                            {
+                                foreach (string l in text.Substring(0, lastNl).Split('\n'))
+                                {
+                                    StatRec rec = Parse(l.TrimEnd('\r').TrimStart('﻿'));
+                                    if (rec != null && rec.T >= cacheFrom) cache.Add(rec);
+                                }
+                                cachePos += Encoding.UTF8.GetByteCount(text.Substring(0, lastNl + 1));
+                            }
+                        }
+                    return cache.Where(x => x.T >= from).ToList();
+                }
+                catch { return Load(from); }
+            }
+        }
+
         // Записи начиная с from, по времени.
         public static List<StatRec> Load(DateTime from)
         {
