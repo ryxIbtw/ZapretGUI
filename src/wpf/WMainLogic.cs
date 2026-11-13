@@ -100,6 +100,9 @@ namespace ZapretGui
                 cardDc.Set(netDc, netChecking, NetMeta(NetCheck.YouTube.Length, NetCheck.Discord.Length));
             }
             if (picker != null) picker.SetValue(selected);
+            UpdateServiceCards();
+            rowServices.Value = Services.Count == 0 ? L.T("нет", "none") : string.Join(", ", Services.Select(s => s.Name));
+            rowIpsetAuto.Checked = IpsetAuto;
             rowSimple.Checked = simple;
             rowNotify.Checked = NotifyOn;
             rowAutoFix.Checked = AutoFixOn;
@@ -319,6 +322,7 @@ namespace ZapretGui
                 for (int i = 0; i < ms.Length; i++) if (ms[i] >= 0) { if (i < NetCheck.YouTube.Length) yt++; else dc++; }
                 // ничего не открылось — проверить обычный сайт: может, пропал весь интернет, а не обход
                 bool net = yt + dc > 0 || NetCheck.Probe("http://www.msftconnecttest.com/connecttest.txt", 4000) || NetCheck.Probe("https://ya.ru", 4000);
+                ProbeServices();   // свои плашки сервисов
                 Post(() =>
                 {
                     Stats.Add(new StatRec

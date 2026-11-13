@@ -627,6 +627,15 @@ namespace ZapretGui
             row2.Children.Add(remove); row2.Children.Add(count);
             sp.Children.Add(row2);
 
+            // буфер обмена, импорт, экспорт, проверка
+            var tools = new WrapPanel { Margin = new Thickness(0, 8, 0, 0) };
+            Action<string, Action> tool = (t, a) => { var l = new FlatLink(t, W.Caption) { Margin = new Thickness(0, 0, 14, 2) }; l.Click += delegate { a(); }; tools.Children.Add(l); };
+            tool(L.T("Вставить из буфера", "Paste from clipboard"), () => { try { input.Text = Clipboard.GetText(); AddFromInput(); } catch { } });
+            tool(L.T("Импорт из файла…", "Import from file…"), ImportFile);
+            tool(L.T("Экспорт в файл…", "Export to file…"), ExportFile);
+            tool(L.T("Найти дубли и ошибки", "Find duplicates and errors"), CheckList);
+            sp.Children.Add(tools);
+
             var row3 = new Grid { Margin = new Thickness(0, 14, 0, 0) };
             var notepad = new FlatLink(L.T("Открыть в Блокноте", "Open in Notepad")) { HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center };
             notepad.Click += delegate { OpenInNotepad = true; Close(); };
@@ -658,6 +667,66 @@ namespace ZapretGui
             if (bad.Count > 0) { error.Foreground = W.Danger; error.Text = L.T("Не похоже на ", "Doesn't look like ") + (ipList ? "IP" : L.T("домен", "a domain")) + ": " + string.Join(", ", bad); }
             else if (dup > 0) { error.Foreground = W.Warn; error.Text = L.T("Уже есть в списке", "Already in the list"); }
             else error.Text = "";
+        }
+
+        void ImportFile()
+        {
+            var d = new Microsoft.Win32.OpenFileDialog { Filter = L.T("Текстовые файлы|*.txt|Все файлы|*.*", "Text files|*.txt|All files|*.*") };
+            if (d.ShowDialog(this) != true) return;
+            try
+            {
+                int added, dup; List<string> bad;
+                ListFile.AddFrom(File.ReadAllText(d.FileName), ipList, items, out added, out dup, out bad);
+                if (added > 0) dirty = true;
+                Refill();
+                error.Foreground = added > 0 ? W.Accent : W.Warn;
+                error.Text = L.T("Добавлено: " + added + ", уже были: " + dup + (bad.Count > 0 ? ", не подошли: " + bad.Count : ""),
+                                 "Added: " + added + ", already there: " + dup + (bad.Count > 0 ? ", rejected: " + bad.Count : ""));
+            }
+            catch (Exception ex) { error.Foreground = W.Danger; error.Text = ex.Message; }
+        }
+
+        void ExportFile()
+        {
+            var d = new Microsoft.Win32.SaveFileDialog { Filter = L.T("Текстовые файлы|*.txt", "Text files|*.txt"), FileName = System.IO.Path.GetFileName(path) };
+            if (d.ShowDialog(this) != true) return;
+            try { File.WriteAllLines(d.FileName, items, new System.Text.UTF8Encoding(false)); error.Foreground = W.Accent; error.Text = L.T("Сохранено: ", "Saved: ") + d.FileName; }
+            catch (Exception ex) { error.Foreground = W.Danger; error.Text = ex.Message; }
+        }
+
+        // Дубли (в том числе «www.» и разный регистр) и записи, которые zapret не поймёт.
+        void CheckList()
+        {
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var dups = new List<string>(); var bad = new List<string>(); var fixedUp = new List<string>();
+            foreach (string s in items)
+            {
+                string problem;
+                string n = ListFile.Normalize(s, ipList, out problem);
+                if (string.IsNullOrEmpty(n)) { bad.Add(s); continue; }
+                string key = ipList ? n : (n.StartsWith("www.") ? n.Substring(4) : n);
+                if (!seen.Add(key)) { dups.Add(s); continue; }
+                if (n != s) fixedUp.Add(s + " → " + n);
+            }
+            if (dups.Count == 0 && bad.Count == 0 && fixedUp.Count == 0) { error.Foreground = W.Accent; error.Text = L.T("Дублей и ошибок нет", "No duplicates or errors"); return; }
+            string msg = (dups.Count > 0 ? L.T("Дубли: ", "Duplicates: ") + string.Join(", ", dups.Take(8)) + (dups.Count > 8 ? "…" : "") + "\n" : "") +
+                         (bad.Count > 0 ? L.T("Ошибки: ", "Errors: ") + string.Join(", ", bad.Take(8)) + (bad.Count > 8 ? "…" : "") + "\n" : "") +
+                         (fixedUp.Count > 0 ? L.T("Можно поправить: ", "Can be fixed: ") + string.Join(", ", fixedUp.Take(5)) + (fixedUp.Count > 5 ? "…" : "") + "\n" : "") +
+                         "\n" + L.T("Убрать дубли и ошибки и поправить записи?", "Remove duplicates and errors and fix the entries?");
+            if (AskW.Show(this, msg, Title, MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
+            var clean = new List<string>(); seen.Clear();
+            foreach (string s in items)
+            {
+                string problem;
+                string n = ListFile.Normalize(s, ipList, out problem);
+                if (string.IsNullOrEmpty(n)) continue;
+                if (seen.Add(ipList ? n : (n.StartsWith("www.") ? n.Substring(4) : n))) clean.Add(n);
+            }
+            items.Clear(); items.AddRange(clean);
+            dirty = true;
+            Refill();
+            error.Foreground = W.Accent;
+            error.Text = L.T("Готово. Нажмите «Сохранить».", "Done. Click Save.");
         }
 
         void RemoveSelected()

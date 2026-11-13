@@ -94,6 +94,8 @@ namespace ZapretGui
                 cards.Children.Add(c);
             }
             sp.Children.Add(cards);
+            var own = BuildServiceCards();   // свои сервисы (до трёх), если добавлены
+            if (own != null) sp.Children.Add(own);
 
             // --- сегодня ---
             var today = new Clickable { Background = W.Surface, CornerRadius = new CornerRadius(14), Padding = new Thickness(14, 10, 14, 6), Margin = new Thickness(0, 10, 0, 0) };
@@ -150,7 +152,7 @@ namespace ZapretGui
         const string DefaultTiles = "auto,watch,game,ipset";
         bool simple;
         List<string> tiles = new List<string>();
-        SettingRowW rowSimple, rowTiles, rowNotify, rowAutoFix, rowSchedule;
+        SettingRowW rowSimple, rowTiles, rowNotify, rowAutoFix, rowSchedule, rowServices, rowIpsetAuto;
 
         void LoadLayoutPrefs()
         {
@@ -205,6 +207,10 @@ namespace ZapretGui
             rowAutoFix = new SettingRowW(L.T("Автовосстановление", "Auto-recovery"), true, "shield", L.T("5 минут не работает — пробовать другие стратегии", "5 minutes down — try other strategies"), false, rh);
             rowSchedule = new SettingRowW(L.T("Подбор по расписанию", "Scheduled test"), true, "chart", L.T("воскресенье 4:00 · лучшая применится сама", "Sunday 4:00 · the best is applied"), false, rh);
             rowSchedule.Click += delegate { SetSchedule(!scheduleOn); };
+            rowServices = new SettingRowW(L.T("Свои сервисы на панели", "Own services on the panel"), false, "globe", L.T("следить не только за YouTube и Discord", "watch more than YouTube and Discord"), false, rh);
+            rowServices.Click += delegate { ShowServicesMenu(); };
+            rowIpsetAuto = new SettingRowW(L.T("Обновлять IPSet раз в неделю", "Update IPSet weekly"), true, "download", L.T("список адресов скачается сам", "the address list downloads by itself"), false, rh);
+            rowIpsetAuto.Click += delegate { IpsetAuto = !IpsetAuto; ipsetCheckedAt = DateTime.MinValue; UpdateUi(); };
             rowNotify.Click += delegate { NotifyOn = !NotifyOn; UpdateUi(); };
             rowAutoFix.Click += delegate
             {
@@ -302,6 +308,9 @@ namespace ZapretGui
             WMenu.Add(m, L.T("Мои домены — тоже через обход", "My domains — also bypassed"), false, () => EditList("list-general-user.txt"));
             WMenu.Add(m, L.T("Исключения — сайты без обхода", "Exclusions — sites left alone"), false, () => EditList("list-exclude-user.txt"));
             WMenu.Add(m, L.T("IP-исключения — адреса без обхода", "IP exclusions — IPs left alone"), false, () => EditList("ipset-exclude-user.txt"));
+            WMenu.Sep(m);
+            WMenu.Add(m, L.T("Проверить сайт…", "Check a site…"), false, CheckSite);
+            WMenu.Add(m, L.T("Добавить сайт из буфера обмена", "Add a site from the clipboard"), false, AddFromClipboard);
             WMenu.Sep(m);
             WMenu.Add(m, L.T("Обновить список IPSet", "Update IPSet list"), false, UpdateIpset);
             WMenu.ShowAbove(m, anchor);

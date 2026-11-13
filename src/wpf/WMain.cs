@@ -18,7 +18,7 @@ namespace ZapretGui
     partial class MainWindow : Window
     {
         double Wd { get { return simple ? 380 : 600; } }
-        double Ht { get { return simple ? 624 : 474 + 72 * TileRows; } }   // 2 ряда плиток — 618
+        double Ht { get { return simple ? 624 : 474 + 72 * TileRows + ServiceRowHeight; } }   // 2 ряда плиток — 618
         readonly Zapret z;
         readonly string snapPath;
         bool startHidden;
@@ -103,6 +103,7 @@ namespace ZapretGui
                 if (busy) return;
                 RefreshState();
                 Watchdog();
+                MaybeAutoUpdateIpset();
                 if (!netChecking && (DateTime.Now - lastNet).TotalSeconds > 60) CheckNet();
             };
             hintTimer.Tick += delegate { hintTimer.Stop(); if (hint != null) hint.Text = ""; };
@@ -245,14 +246,14 @@ namespace ZapretGui
             Func<string, bool> here = k => !tiles.Contains(k);
             group(L.T("Основное", "General"));
             var c1 = new CardBox(); c1.Add(rowLang); c1.Add(rowTheme); c1.Add(rowSimple);
-            if (!simple) c1.Add(rowTiles);
+            if (!simple) { c1.Add(rowTiles); c1.Add(rowServices); }
             if (here("guistart")) c1.Add(rowGuiStart);
             if (here("tray")) c1.Add(rowTray);
             sp.Children.Add(c1);
             group(L.T("Обход", "Bypass"));
             var c2 = new CardBox();
             foreach (string k in new[] { "auto", "watch", "game", "ipset" }) if (here(k)) c2.Add(RowFor(k));
-            c2.Add(rowNotify); c2.Add(rowAutoFix); c2.Add(rowSchedule);
+            c2.Add(rowNotify); c2.Add(rowAutoFix); c2.Add(rowSchedule); c2.Add(rowIpsetAuto);
             c2.Add(rowFakes);
             sp.Children.Add(c2);
             group(L.T("Обслуживание", "Maintenance"));
