@@ -103,6 +103,8 @@ namespace ZapretGui
             rowSimple.Checked = simple;
             rowNotify.Checked = NotifyOn;
             rowAutoFix.Checked = AutoFixOn;
+            rowSchedule.Checked = scheduleOn;
+            if (picker != null) picker.SetNote(Note(selected));
             rowTiles.Value = tiles.Count + L.T(" из ", " of ") + TileKeys.Length;
             rowAuto.Checked = autostart;
             rowGame.Value = GameLabel(z.GameMode);
@@ -230,9 +232,10 @@ namespace ZapretGui
         internal void StepStrategy(int d)
         {
             if (busy || strategies.Count == 0) return;
-            int i = strategies.IndexOf(selected);
-            i = ((i < 0 ? 0 : i + d) % strategies.Count + strategies.Count) % strategies.Count;
-            SelectStrategy(strategies[i]);
+            var lst = StepList();   // избранные, если их две и больше
+            int i = lst.IndexOf(selected);
+            i = i < 0 ? (d > 0 ? 0 : lst.Count - 1) : ((i + d) % lst.Count + lst.Count) % lst.Count;
+            SelectStrategy(lst[i]);
         }
 
         void ToggleAutostart()
@@ -403,12 +406,15 @@ namespace ZapretGui
             if (!FlowTest.CurlAvailable) { Toast(L.T("Не найден curl.exe — он нужен для проверок", "curl.exe not found — it is needed for the checks"), true); return; }
             FlowTest.RestoreLeftoverIpset(z);   // прошлый тест DPI прервался — вернуть IPSet
             var targets = FlowTest.LoadTargets(z);
-            var setup = new PickSetupW(this, strategies, targets.Count, FlowTest.TargetsFromFile(z), preselect);
+            var setup = new PickSetupW(this, strategies, targets.Count, FlowTest.TargetsFromFile(z), preselect, QuickList(), () => EditTargets());
             setup.ShowDialog();
             if (setup.Mode == null) return;
-            var list = setup.Selected;
-            string testMode = setup.Mode;
+            RunPick(setup.Selected, setup.Mode, FlowTest.LoadTargets(z), false);
+        }
 
+        // unattended — подбор по расписанию: без окон, лучшая применяется сама, если она лучше текущей.
+        void RunPick(List<string> list, string testMode, List<TestTarget> targets, bool unattended)
+        {
             bool wasActive = Active;
             string prev = selected;
             busy = true; picking = true; cancelPick = false; expectRunning = false; pickProgress = 0;
@@ -480,13 +486,29 @@ namespace ZapretGui
                     busy = false; picking = false; pickName = null;
                     RefreshState();
                     if (err != null) Toast(err.Message, true);
-                    ShowPickResults(results, cancelPick, wasActive, prev);
+                    if (unattended) FinishScheduledPick(results, cancelPick, wasActive, prev);
+                    else ShowPickResults(results, cancelPick, wasActive, prev);
                 });
             });
         }
 
         void ShowPickResults(List<PickResult> results, bool partial, bool wasActive, string prev)
         {
+            // окно спрятано в трей — подбор шёл в фоне: вернуть обход как был, а результаты показать, когда откроют окно
+            if (!IsVisible && results.Count > 0)
+            {
+                if (!partial) PickHistory.Save(results);
+                var rk = PickResult.Rank(results);
+                var bst = rk.FirstOrDefault(r => r.Works);
+                FlowTest.SaveReport(z, results, bst);
+                Journal.Add(L.T("Подбор завершён в фоне", "Strategy test finished in the background") + (bst != null ? L.T(", лучшая — ", ", best — ") + bst.Name : L.T(", рабочих нет", ", none worked")));
+                RestoreAfterPick(wasActive, prev);
+                pendingPickResults = true;
+                Balloon(L.T("Подбор закончен", "Strategy test finished"),
+                    bst != null ? L.T("Лучшая — " + bst.Name + ". Откройте программу, чтобы применить.", "Best — " + bst.Name + ". Open the app to apply it.")
+                                : L.T("Рабочая стратегия не найдена.", "No working strategy found."), WF.ToolTipIcon.Info);
+                return;
+            }
             var past = PickHistory.Load();
             if (!partial && results.Count > 0) PickHistory.Save(results);
             var ranked = PickResult.Rank(results);
@@ -547,11 +569,19 @@ namespace ZapretGui
             if (busy) return null;
             strategies = z.Strategies();
             var m = WMenu.Create();
+            var fav = Favorites;
             foreach (string s in strategies)
             {
                 string name = s;
-                WMenu.Add(m, name, name == selected, () => SelectStrategy(name));
+                string note = Note(name);
+                WMenu.Add(m, (fav.Contains(name) ? "★ " : "") + name + (note != "" ? "   ·  " + note : ""), name == selected, () => SelectStrategy(name));
             }
+            WMenu.Sep(m);
+            string cur = selected;
+            WMenu.Add(m, fav.Contains(cur) ? L.T("Убрать «" + cur + "» из избранных", "Remove “" + cur + "” from favorites")
+                                           : L.T("★ Добавить «" + cur + "» в избранные", "★ Add “" + cur + "” to favorites"), false, () => { ToggleFavorite(cur); UpdateUi(); });
+            WMenu.Add(m, L.T("Сравнить «" + cur + "» с другой…", "Compare “" + cur + "” with another…"), false, () => AutoPick(new List<string> { cur }));
+            WMenu.Add(m, L.T("Все стратегии…", "All strategies…"), false, ShowStrategies);
             m.MaxHeight = 420;   // длиннее — с прокруткой
             m.Opened += delegate
             {
@@ -736,6 +766,7 @@ namespace ZapretGui
             WMenu.Add(m, L.T("Исключения (list-exclude-user)", "Exclusions (list-exclude-user)"), false, () => EditList("list-exclude-user.txt"));
             WMenu.Add(m, L.T("IP-исключения (ipset-exclude-user)", "IP exclusions (ipset-exclude-user)"), false, () => EditList("ipset-exclude-user.txt"));
             WMenu.Sep(m);
+            WMenu.Add(m, L.T("Стратегии", "Strategies"), false, ShowStrategies);
             WMenu.Add(m, L.T("Результаты прошлого подбора", "Last strategy test results"), false, ShowLastPick);
             WMenu.Add(m, L.T("Статистика", "Statistics"), false, ShowStats);
             WMenu.Add(m, L.T("Журнал событий", "Event log"), false, ShowJournal);

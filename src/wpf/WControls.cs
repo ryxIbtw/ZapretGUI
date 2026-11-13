@@ -338,7 +338,8 @@ namespace ZapretGui
             hover = new Border { Background = W.SurfaceHover, CornerRadius = new CornerRadius(14), Opacity = 0 };
             g.Children.Add(hover);
             var texts = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(16, 0, 96, 0), Cursor = Cursors.Hand, Background = Brushes.Transparent };
-            texts.Children.Add(W.T(L.T("Стратегия", "Strategy"), W.Caption, W.Muted));
+            caption = W.T(L.T("Стратегия", "Strategy"), W.Caption, W.Muted);
+            texts.Children.Add(caption);
             name = W.T("", W.BodyStrong, W.Text, true);
             name.Margin = new Thickness(0, 2, 0, 0);
             texts.Children.Add(name);
@@ -372,6 +373,13 @@ namespace ZapretGui
             return c;
         }
         public void SetValue(string v) { name.Text = string.IsNullOrEmpty(v) ? L.T("нет .bat файлов", "no .bat files") : v; }
+        // заметка к стратегии — рядом с подписью «Стратегия»
+        public void SetNote(string note)
+        {
+            string t = L.T("Стратегия", "Strategy") + (string.IsNullOrEmpty(note) ? "" : "  ·  " + note);
+            if (caption.Text != t) caption.Text = t;
+        }
+        readonly TextBlock caption;
         public FrameworkElement Anchor { get { return this; } }
     }
 

@@ -18,6 +18,7 @@ namespace ZapretGui
         static bool NotifyOn { get { return Prefs.Get("NotifyBroken", "1") == "1"; } set { Prefs.Set("NotifyBroken", value ? "1" : "0"); } }
 
         bool justStarted;          // только что включили обход — проверить, открываются ли сайты
+        bool pendingPickResults;   // подбор закончился, пока окно было в трее
         bool notifiedBroken;       // уже сообщали из трея, что сломалось
         int badStreak;             // сколько проверок подряд не открывается
         readonly List<string> autoTried = new List<string>();

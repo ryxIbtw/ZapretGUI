@@ -26,11 +26,12 @@ namespace ZapretGui
         {
             L.Init();
             string rootArg = null, snap = null;
-            bool hidden = false;
+            bool hidden = false, scheduledPick = false;
             int waitPid = 0;
             for (int i = 0; i < args.Length; i++)
             {
                 if (args[i] == "--tray") hidden = true;
+                else if (args[i] == "--scheduled-pick") { scheduledPick = true; hidden = true; }
                 else if (args[i] == "--root" && i + 1 < args.Length) rootArg = args[++i];
                 else if (args[i] == "--wait-pid" && i + 1 < args.Length) int.TryParse(args[++i], out waitPid);
 #if TESTHOOKS
@@ -47,7 +48,8 @@ namespace ZapretGui
             {
                 if (!first && snap == null)
                 {
-                    PostMessage((IntPtr)0xFFFF, MainWindow.WM_SHOWME, IntPtr.Zero, IntPtr.Zero);
+                    // программа уже запущена — передать ей просьбу (показать окно или подбор по расписанию)
+                    PostMessage((IntPtr)0xFFFF, scheduledPick ? MainWindow.WM_PICKNOW : MainWindow.WM_SHOWME, IntPtr.Zero, IntPtr.Zero);
                     return 0;
                 }
                 // приложение и тема — до поиска папки, чтобы окна первого запуска были в стиле программы
@@ -67,6 +69,13 @@ namespace ZapretGui
                 if (snap != null) { Snap.Run(w, snap); app.Run(); return 0; }
 #endif
                 if (!w.StartHidden) w.Show();
+                if (scheduledPick)
+                {
+                    // запустились ради подбора по расписанию — дать обходу и сети подняться, потом начать
+                    var t = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(20) };
+                    t.Tick += delegate { t.Stop(); w.ScheduledPick(); };
+                    t.Start();
+                }
                 app.Run();
             }
             return 0;

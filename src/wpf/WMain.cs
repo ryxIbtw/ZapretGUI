@@ -123,7 +123,8 @@ namespace ZapretGui
                 ThreadPool.QueueUserWorkItem(delegate
                 {
                     bool a = GuiAutostart.Enabled;
-                    Post(() => { guiAutostart = a; UpdateUi(); });
+                    bool sch = ScheduleOn;
+                    Post(() => { guiAutostart = a; scheduleOn = sch; UpdateUi(); });
                 });
                 CheckNet();
                 if (z.UpdatesEnabled) CheckUpdates();
@@ -251,7 +252,7 @@ namespace ZapretGui
             group(L.T("Обход", "Bypass"));
             var c2 = new CardBox();
             foreach (string k in new[] { "auto", "watch", "game", "ipset" }) if (here(k)) c2.Add(RowFor(k));
-            c2.Add(rowNotify); c2.Add(rowAutoFix);
+            c2.Add(rowNotify); c2.Add(rowAutoFix); c2.Add(rowSchedule);
             c2.Add(rowFakes);
             sp.Children.Add(c2);
             group(L.T("Обслуживание", "Maintenance"));
@@ -469,11 +470,13 @@ namespace ZapretGui
             if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
             Activate();
             if (pendingWhatsNew != null || pendingGuiNews != null) Dispatcher.BeginInvoke((Action)ShowPendingNews);
+            if (pendingPickResults) { pendingPickResults = false; Dispatcher.BeginInvoke((Action)ShowLastPick); }
         }
 
         IntPtr WndProc(IntPtr hwnd, int msg, IntPtr w, IntPtr l, ref bool handled)
         {
             if (msg == WM_SHOWME) ShowFromTray();
+            else if (msg == WM_PICKNOW) Dispatcher.BeginInvoke((Action)ScheduledPick);   // задача планировщика
             return IntPtr.Zero;
         }
 

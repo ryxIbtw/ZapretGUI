@@ -7,8 +7,6 @@ namespace ZapretGui
 {
     partial class MainWindow
     {
-        public Zapret Zap { get { return z; } }
-
         public void SnapPrepare()
         {
             if (Environment.GetEnvironmentVariable("ZAPRETGUI_SNAP_NET") == "ok")

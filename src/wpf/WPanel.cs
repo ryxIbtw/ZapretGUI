@@ -150,7 +150,7 @@ namespace ZapretGui
         const string DefaultTiles = "auto,watch,game,ipset";
         bool simple;
         List<string> tiles = new List<string>();
-        SettingRowW rowSimple, rowTiles, rowNotify, rowAutoFix;
+        SettingRowW rowSimple, rowTiles, rowNotify, rowAutoFix, rowSchedule;
 
         void LoadLayoutPrefs()
         {
@@ -203,6 +203,8 @@ namespace ZapretGui
             rowUpdate = new SettingRowW(L.T("Обновления", "Updates"), false, "download", "", false, rh);
             rowNotify = new SettingRowW(L.T("Сообщать о сбоях", "Notify about problems"), true, "alert", L.T("уведомление из трея, когда сайты перестали открываться", "tray message when sites stop opening"), false, rh);
             rowAutoFix = new SettingRowW(L.T("Автовосстановление", "Auto-recovery"), true, "shield", L.T("5 минут не работает — пробовать другие стратегии", "5 minutes down — try other strategies"), false, rh);
+            rowSchedule = new SettingRowW(L.T("Подбор по расписанию", "Scheduled test"), true, "chart", L.T("воскресенье 4:00 · лучшая применится сама", "Sunday 4:00 · the best is applied"), false, rh);
+            rowSchedule.Click += delegate { SetSchedule(!scheduleOn); };
             rowNotify.Click += delegate { NotifyOn = !NotifyOn; UpdateUi(); };
             rowAutoFix.Click += delegate
             {

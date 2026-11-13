@@ -138,7 +138,8 @@ namespace ZapretGui
         Border optStd, optDpi;
         string mode = "std";
 
-        public PickSetupW(Window owner, List<string> strategies, int targetCount, bool fromFile, List<string> preselect = null) : base(L.T("Подбор стратегии", "Find a strategy"), owner)
+        public PickSetupW(Window owner, List<string> strategies, int targetCount, bool fromFile, List<string> preselect = null,
+                          List<string> quick = null, Action editTargets = null) : base(L.T("Подбор стратегии", "Find a strategy"), owner)
         {
             var sp = new StackPanel { Width = 420, Margin = new Thickness(22, 18, 22, 18) };
             sp.Children.Add(W.T(Title, W.Title, W.Text, true));
@@ -159,11 +160,24 @@ namespace ZapretGui
                 L.T("серверы из списка hyperion-cs, нужен интернет; IPSet на время станет «все IP»", "servers from the hyperion-cs list, needs internet; IPSet becomes “any IP” meanwhile"), "dpi");
             optDpi.Margin = new Thickness(0, 8, 0, 0);
             sp.Children.Add(optStd); sp.Children.Add(optDpi);
+            if (editTargets != null)
+            {
+                var et = new FlatLink(L.T("Свои сайты для проверки…", "Own test sites…"), W.Caption) { HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(2, 6, 0, 0) };
+                et.Click += delegate { editTargets(); };
+                sp.Children.Add(et);
+            }
 
             var head = new Grid { Margin = new Thickness(2, 16, 2, 6) };
             head.Children.Add(W.T(L.T("Стратегии", "Strategies"), W.Caption, W.Muted, true));
             var links = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
             var all = new FlatLink(L.T("Все", "All")); var none = new FlatLink(L.T("Ни одной", "None")) { Margin = new Thickness(12, 0, 0, 0) };
+            if (quick != null && quick.Count >= 2)
+            {
+                // быстрый подбор — только те, что у вас раньше были лучшими
+                var q = new FlatLink(L.T("Быстро: " + quick.Count + " лучших", "Quick: best " + quick.Count)) { Margin = new Thickness(0, 0, 12, 0) };
+                q.Click += delegate { box.UnselectAll(); foreach (string s in strategies) if (quick.Contains(s)) box.SelectedItems.Add(s); };
+                links.Children.Add(q);
+            }
             links.Children.Add(all); links.Children.Add(none);
             head.Children.Add(links);
             sp.Children.Add(head);
@@ -230,7 +244,8 @@ namespace ZapretGui
             // время на стратегию: запуск ~1.5 с + три проверки по 4 с (обычный) или по 5 с (DPI), сайты проверяются параллельно
             int sec = mode == "dpi" ? 17 : 14;
             int min = Math.Max(1, (int)Math.Ceiling(n * sec / 60.0));
-            count.Text = L.T("Выбрано: " + n + "  ·  примерно до " + min + " мин.", "Selected: " + n + "  ·  up to about " + min + " min");
+            count.Text = (n == 2 ? L.T("Сравнение двух", "Comparing two") : L.T("Выбрано: " + n, "Selected: " + n)) +
+                         L.T("  ·  примерно до " + min + " мин.", "  ·  up to about " + min + " min");
         }
     }
 
@@ -311,12 +326,17 @@ namespace ZapretGui
             var notes = new StackPanel { VerticalAlignment = VerticalAlignment.Center, MaxWidth = 380, HorizontalAlignment = HorizontalAlignment.Left };
             notes.Children.Add(new TextBlock { Text = title == null ? L.T("«Отмена» вернёт то, что работало до подбора", "Cancel restores what was running before") : "",
                 Foreground = W.Dim, FontSize = W.Caption });
+            var linksRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 2, 0, 0) };
             if (report != null)
             {
-                var rl = new FlatLink(L.T("Открыть отчёт (как у Flowseal)", "Open the report (Flowseal format)"), W.Caption) { HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 2, 0, 0) };
+                var rl = new FlatLink(L.T("Открыть отчёт (как у Flowseal)", "Open the report (Flowseal format)"), W.Caption) { Margin = new Thickness(0, 0, 14, 0) };
                 rl.Click += delegate { try { Process.Start(new ProcessStartInfo("notepad.exe", "\"" + report + "\"") { UseShellExecute = true }); } catch { } };
-                notes.Children.Add(rl);
+                linksRow.Children.Add(rl);
             }
+            var share = new FlatLink(L.T("Скопировать результаты", "Copy results"), W.Caption);
+            share.Click += delegate { try { Clipboard.SetText(MainWindow.ShareText(ranked)); share.Text = L.T("Скопировано", "Copied"); } catch { } };
+            linksRow.Children.Add(share);
+            notes.Children.Add(linksRow);
             bar.Children.Add(notes);
             var btns = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
             var cancel = new Pill(L.T("Отмена", "Cancel"), true) { MinWidth = 110 };
