@@ -127,12 +127,10 @@ namespace ZapretGui
             }
             while (true)
             {
-                using (var d = new WF.FolderBrowserDialog { Description = L.T("Папка zapret-discord-youtube (где лежит service.bat)", "zapret-discord-youtube folder (with service.bat)") })
-                {
-                    if (d.ShowDialog() != WF.DialogResult.OK) return null;
-                    if (Zapret.IsValidRoot(d.SelectedPath)) { Prefs.Set("Root", d.SelectedPath); return d.SelectedPath; }
-                    AskW.Show(null, L.T("В этой папке нет service.bat и папки bin.", "This folder has no service.bat and bin folder."), "Zapret", MessageBoxButton.OK, MessageBoxImage.Warning);
-                }
+                string picked = FolderPicker.Pick(L.T("Папка zapret-discord-youtube (где лежит service.bat)", "zapret-discord-youtube folder (with service.bat)"));
+                if (picked == null) return null;
+                if (Zapret.IsValidRoot(picked)) { Prefs.Set("Root", picked); return picked; }
+                AskW.Show(null, L.T("В этой папке нет service.bat и папки bin.", "This folder has no service.bat and bin folder."), "Zapret", MessageBoxButton.OK, MessageBoxImage.Warning);
             }
         }
 

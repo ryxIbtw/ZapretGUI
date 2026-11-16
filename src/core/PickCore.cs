@@ -91,7 +91,7 @@ namespace ZapretGui
 
         static string FilePath
         {
-            get { return PathOverride ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "ZapretGUI", "pick-history.tsv"); }
+            get { return PathOverride ?? Path.Combine(Prefs.DataDir, "pick-history.tsv"); }
         }
 
         public static List<Run> Load()

@@ -36,6 +36,7 @@ namespace ZapretGui
         public string Current { get { return selected; } }
         public void SelectStrategyPublic(string name) { SelectStrategy(name); }
         public Zapret Zap { get { return z; } }
+        public string JournalHeaderPublic() { return JournalHeader(); }
 
         // Заметка к стратегии, например «лучшая вечером».
         public static string Note(string name) { return Prefs.Get("Note:" + name, ""); }
@@ -90,8 +91,9 @@ namespace ZapretGui
         // Задача планировщика Windows: каждое воскресенье в 4:00 — быстрый подбор (только по нажатию в настройках).
         void SetSchedule(bool on)
         {
+            string when = (ScheduleDay == "DAILY" ? "/SC DAILY" : "/SC WEEKLY /D " + ScheduleDay) + " /ST " + ScheduleTime;
             string args = on
-                ? "/Create /F /TN \"" + ScheduleTask + "\" /SC WEEKLY /D SUN /ST 04:00 /RL HIGHEST /TR \"\\\"" + WF.Application.ExecutablePath + "\\\" --scheduled-pick\""
+                ? "/Create /F /TN \"" + ScheduleTask + "\" " + when + " /RL HIGHEST /TR \"\\\"" + WF.Application.ExecutablePath + "\\\" --scheduled-pick\""
                 : "/Delete /F /TN \"" + ScheduleTask + "\"";
             try
             {
@@ -102,8 +104,8 @@ namespace ZapretGui
                     if (p.ExitCode != 0) throw new Exception(err.Trim());
                 }
                 scheduleOn = on;
-                Journal.Add(on ? L.T("Подбор по расписанию включён: воскресенье, 4:00", "Scheduled test on: Sunday 4:00") : L.T("Подбор по расписанию выключен", "Scheduled test off"));
-                Toast(on ? L.T("Подбор будет запускаться по воскресеньям в 4:00", "The test will run on Sundays at 4:00") : L.T("Подбор по расписанию выключен", "Scheduled test off"));
+                Journal.Add(on ? L.T("Подбор по расписанию включён: ", "Scheduled test on: ") + ScheduleLabel() : L.T("Подбор по расписанию выключен", "Scheduled test off"));
+                Toast(on ? L.T("Подбор по расписанию: ", "Scheduled test: ") + DayLabel(ScheduleDay, true).ToLower() + ", " + ScheduleTime : L.T("Подбор по расписанию выключен", "Scheduled test off"));
             }
             catch (Exception ex) { Toast(L.T("Планировщик: ", "Task Scheduler: ") + ex.Message, true); }
             UpdateUi();

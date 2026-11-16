@@ -147,6 +147,7 @@ namespace ZapretGui
             tb = W.T(text, W.Small, W.Muted);
             Child = tb;
         }
+        public string Text { get { return tb.Text; } set { tb.Text = value; } }
         public bool On { get { return on; } set { on = value; Background = on ? (Brush)W.Knob : Brushes.Transparent; tb.Foreground = on ? W.Text : W.Muted; } }
         protected override void OnHot(bool h) { if (!on) tb.Foreground = h ? W.Text : W.Muted; }
     }
@@ -250,8 +251,7 @@ namespace ZapretGui
             var head = new Grid();
             head.Children.Add(W.T(Title, W.Title, W.Text, true));
             var tabRow = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center };
-            string allLabel = Stats.KeepDays == 30 ? L.T("Месяц", "Month") : Stats.KeepDays == 90 ? L.T("90 дней", "90 days") : L.T("Всё", "All");
-            tabs = new[] { new RangeTab(L.T("Сегодня", "Today")), new RangeTab(L.T("Неделя", "Week")), new RangeTab(allLabel) };
+            tabs = new[] { new RangeTab(L.T("Сегодня", "Today")), new RangeTab(L.T("Неделя", "Week")), new RangeTab(AllLabel()) };
             for (int i = 0; i < tabs.Length; i++)
             {
                 int idx = i;
@@ -381,16 +381,30 @@ namespace ZapretGui
             foot.Children.Remove(open);
             foot.Children.Add(left);
             var keepRow = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
-            keepRow.Children.Add(W.T(L.T("Хранить: ", "Keep: "), W.Small, W.Dim));
-            foreach (int d in new[] { 7, 30, 90 })
+            Action fillKeep = null;
+            fillKeep = () =>
             {
-                int dd = d;
-                var l = new FlatLink(d.ToString()) { Margin = new Thickness(4, 0, 4, 0) };
-                if (d == Stats.KeepDays) l.Child = W.T(d.ToString(), W.Small, W.Accent, true);
-                l.Click += delegate { Stats.KeepDays = dd; Journal.Add(L.T("Статистика хранится ", "Statistics kept for ") + dd + L.T(" дней", " days")); Close(); };
-                keepRow.Children.Add(l);
-            }
-            keepRow.Children.Add(W.T(L.T("дней", "days"), W.Small, W.Dim));
+                keepRow.Children.Clear();
+                keepRow.Children.Add(W.T(L.T("Хранить: ", "Keep: "), W.Small, W.Dim));
+                foreach (int d in new[] { 7, 30, 90 })
+                {
+                    int dd = d;
+                    var l = new FlatLink(d.ToString()) { Margin = new Thickness(4, 0, 4, 0) };
+                    if (d == Stats.KeepDays) l.Child = W.T(d.ToString(), W.Small, W.Accent, true);
+                    l.Click += delegate
+                    {
+                        // срок меняется сразу, окно остаётся открытым
+                        Stats.KeepDays = dd;
+                        Journal.Add(L.T("Статистика хранится ", "Statistics kept for ") + dd + L.T(" дней", " days"));
+                        tabs[2].Text = AllLabel();
+                        fillKeep();
+                        Select(cur);
+                    };
+                    keepRow.Children.Add(l);
+                }
+                keepRow.Children.Add(W.T(L.T("дней", "days"), W.Small, W.Dim));
+            };
+            fillKeep();
             foot.Children.Add(keepRow);
             sp.Children.Add(foot);
 
@@ -473,6 +487,7 @@ namespace ZapretGui
 
         int cur;
         DateTime lastFrom, lastTo;
+        static string AllLabel() { return Stats.KeepDays == 30 ? L.T("Месяц", "Month") : Stats.KeepDays == 90 ? L.T("90 дней", "90 days") : L.T("Всё", "All"); }
 
         void FillOutages(List<StatRec> recs, DateTime from, DateTime to)
         {

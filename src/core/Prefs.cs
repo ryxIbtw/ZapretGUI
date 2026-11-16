@@ -25,6 +25,35 @@ namespace ZapretGui
 
         public static bool Portable { get { try { return File.Exists(IniPath); } catch { return false; } } }
 
+        // Где лежат журнал, статистика, история подборов и копии настроек:
+        // обычно %APPDATA%\ZapretGUI, в переносном режиме — папка ZapretGUI-data рядом с программой.
+        static string RoamingDir { get { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "ZapretGUI"); } }
+        static string PortableDir { get { return Path.Combine(Path.GetDirectoryName(IniPath) ?? "", "ZapretGUI-data"); } }
+        public static string DataDir { get { return Portable ? PortableDir : RoamingDir; } }
+
+        // Все настройки (имя → значение) — для резервной копии.
+        public static Dictionary<string, string> All()
+        {
+            if (Portable) lock (sync) { LoadIni(); return new Dictionary<string, string>(ini); }
+            return RegistryValues();
+        }
+
+        // При смене режима данные копируются в новое место (старые файлы остаются, ничего не удаляется).
+        static void CopyData(string from, string to)
+        {
+            try
+            {
+                if (!Directory.Exists(from)) return;
+                Directory.CreateDirectory(to);
+                foreach (string name in new[] { "events.log", "stats.tsv", "pick-history.tsv" })
+                {
+                    string s = Path.Combine(from, name), d = Path.Combine(to, name);
+                    if (File.Exists(s) && !File.Exists(d)) File.Copy(s, d);
+                }
+            }
+            catch { }
+        }
+
         public static string Get(string name, string def)
         {
             if (Portable)
@@ -100,9 +129,11 @@ namespace ZapretGui
                 {
                     ini = RegistryValues();
                     SaveIni();
+                    CopyData(RoamingDir, PortableDir);
                 }
                 else
                 {
+                    CopyData(PortableDir, RoamingDir);
                     LoadIni();
                     using (var k = Registry.CurrentUser.CreateSubKey(Key))
                         foreach (var kv in ini) k.SetValue(kv.Key, kv.Value);

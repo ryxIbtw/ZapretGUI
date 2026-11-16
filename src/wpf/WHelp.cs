@@ -64,7 +64,13 @@ namespace ZapretGui
             var disc = new FlatLink(L.T("Обсуждения на GitHub", "Discussions on GitHub")) { Margin = new Thickness(0, 0, 16, 0) };
             disc.Click += delegate { Open(DiscussionsUrl); };
             var issue = new FlatLink(L.T("Сообщить о проблеме", "Report a problem"));
-            issue.Click += delegate { Close(); new ReportW(Owner, () => "").ShowDialog(); };
+            issue.Click += delegate
+            {
+                var mw = owner as MainWindow;   // сведения о системе берутся у главного окна
+                Func<string> header = () => mw != null ? mw.JournalHeaderPublic() : "";
+                Close();
+                new ReportW(owner, header).ShowDialog();
+            };
             bar.Children.Add(disc); bar.Children.Add(issue);
             sp.Children.Add(bar);
             Root.Child = sp;

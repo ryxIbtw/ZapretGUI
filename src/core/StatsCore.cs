@@ -130,7 +130,7 @@ namespace ZapretGui
 
         public static string FilePath
         {
-            get { return PathOverride ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "ZapretGUI", "stats.tsv"); }
+            get { return PathOverride ?? Path.Combine(Prefs.DataDir, "stats.tsv"); }
         }
 
         public static void Add(StatRec r)

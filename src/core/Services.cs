@@ -140,6 +140,37 @@ namespace ZapretGui
     }
 
     // Самообновление ZapretGUI из релизов на GitHub.
+    // Разбор JSON (ответы GitHub и DNS) настоящим разборщиком из .NET, а не поиском по тексту.
+    static class Json
+    {
+        public static System.Collections.Generic.Dictionary<string, object> Obj(string text)
+        {
+            var js = new System.Web.Script.Serialization.JavaScriptSerializer { MaxJsonLength = 32 * 1024 * 1024 };
+            return js.Deserialize<System.Collections.Generic.Dictionary<string, object>>(text);
+        }
+
+        public static string Str(System.Collections.Generic.Dictionary<string, object> o, string key)
+        {
+            object v;
+            return o != null && o.TryGetValue(key, out v) && v != null ? v.ToString() : null;
+        }
+
+        public static System.Collections.Generic.List<System.Collections.Generic.Dictionary<string, object>> Arr(System.Collections.Generic.Dictionary<string, object> o, string key)
+        {
+            var res = new System.Collections.Generic.List<System.Collections.Generic.Dictionary<string, object>>();
+            object v;
+            if (o == null || !o.TryGetValue(key, out v)) return res;
+            var list = v as System.Collections.IEnumerable;
+            if (list == null || v is string) return res;
+            foreach (object item in list)
+            {
+                var d = item as System.Collections.Generic.Dictionary<string, object>;
+                if (d != null) res.Add(d);
+            }
+            return res;
+        }
+    }
+
     static class SelfUpdate
     {
         const string Api = "https://api.github.com/repos/ryxIbtw/ZapretGUI/releases/latest";
@@ -161,50 +192,70 @@ namespace ZapretGui
         // Бросает исключение, если GitHub недоступен.
         public static Version Latest(out string exeUrl, out string shaUrl)
         {
-            string json = Zapret.Download(Api, 10000);
-            var tag = System.Text.RegularExpressions.Regex.Match(json, "\"tag_name\"\\s*:\\s*\"([^\"]+)\"");
-            var exe = System.Text.RegularExpressions.Regex.Match(json, "\"browser_download_url\"\\s*:\\s*\"([^\"]+/ZapretGUI\\.exe)\"");
-            var sha = System.Text.RegularExpressions.Regex.Match(json, "\"browser_download_url\"\\s*:\\s*\"([^\"]+/ZapretGUI\\.exe\\.sha256)\"");
-            if (!tag.Success || !exe.Success) throw new Exception(L.T("В релизе не найден ZapretGUI.exe", "ZapretGUI.exe not found in the release"));
-            exeUrl = exe.Groups[1].Value;
-            shaUrl = sha.Success ? sha.Groups[1].Value : null;
-            return Parse(tag.Groups[1].Value);
+            var rel = Json.Obj(Zapret.Download(Api, 10000));
+            string tag = Json.Str(rel, "tag_name");
+            exeUrl = null; shaUrl = null;
+            foreach (var a in Json.Arr(rel, "assets"))
+            {
+                string name = Json.Str(a, "name"), url = Json.Str(a, "browser_download_url");
+                if (name == "ZapretGUI.exe") exeUrl = url;
+                else if (name == "ZapretGUI.exe.sha256") shaUrl = url;
+            }
+            if (tag == null || exeUrl == null) throw new Exception(L.T("В релизе не найден ZapretGUI.exe", "ZapretGUI.exe not found in the release"));
+            return Parse(tag);
         }
 
         // Описание релиза версии v с GitHub (Markdown). null — не удалось получить.
         public static string ReleaseNotes(Version v)
         {
+            try { return Json.Str(Json.Obj(Zapret.Download("https://api.github.com/repos/ryxIbtw/ZapretGUI/releases/tags/v" + v.ToString(3), 10000)), "body"); }
+            catch { return null; }
+        }
+
+        // Раздел версии v из встроенного списка изменений (CHANGELOG.md вшит в программу при сборке). null — раздела нет.
+        public static string BuiltInNotes(Version v)
+        {
             try
             {
-                string json = Zapret.Download("https://api.github.com/repos/ryxIbtw/ZapretGUI/releases/tags/v" + v.ToString(3), 10000);
-                var m = System.Text.RegularExpressions.Regex.Match(json, "\"body\"\\s*:\\s*\"((?:\\\\.|[^\"\\\\])*)\"");
-                return m.Success ? JsonUnescape(m.Groups[1].Value) : null;
+                using (var s = System.Reflection.Assembly.GetExecutingAssembly().GetManifestResourceStream("CHANGELOG.md"))
+                {
+                    if (s == null) return null;
+                    string all = new StreamReader(s, Encoding.UTF8).ReadToEnd().Replace("\r", "");
+                    int start = all.IndexOf("\n## " + v.ToString(3));
+                    if (start < 0) return null;
+                    start = all.IndexOf('\n', start + 1) + 1;
+                    int end = all.IndexOf("\n## ", start);
+                    string part = (end < 0 ? all.Substring(start) : all.Substring(start, end - start)).Trim();
+                    return part == "" ? null : part;
+                }
             }
             catch { return null; }
         }
 
-        static string JsonUnescape(string s)
+        // Прошлая версия программы хранится рядом (ZapretGUI.exe.prev), чтобы можно было вернуться.
+        public static string PrevPath { get { return Application.ExecutablePath + ".prev"; } }
+
+        public static string PrevVersion()
         {
-            var sb = new StringBuilder(s.Length);
-            for (int i = 0; i < s.Length; i++)
+            try
             {
-                char c = s[i];
-                if (c != '\\' || i + 1 >= s.Length) { sb.Append(c); continue; }
-                char n = s[++i];
-                switch (n)
-                {
-                    case 'n': sb.Append('\n'); break;
-                    case 'r': break;
-                    case 't': sb.Append('\t'); break;
-                    case 'u':
-                        if (i + 4 < s.Length) { sb.Append((char)Convert.ToInt32(s.Substring(i + 1, 4), 16)); i += 4; }
-                        break;
-                    default: sb.Append(n); break;   // \" \\ \/
-                }
+                if (!File.Exists(PrevPath)) return null;
+                var fv = System.Diagnostics.FileVersionInfo.GetVersionInfo(PrevPath);
+                return fv.FileMajorPart + "." + fv.FileMinorPart + "." + fv.FileBuildPart;
             }
-            return sb.ToString();
+            catch { return null; }
         }
 
+        // Возврат: текущий файл становится .old (после перезапуска — .prev, так что можно вернуться и обратно).
+        public static void Rollback()
+        {
+            string exe = Application.ExecutablePath, old = exe + ".old";
+            if (!File.Exists(PrevPath)) throw new Exception(L.T("Прошлая версия не сохранена", "No previous version saved"));
+            if (File.Exists(old)) File.Delete(old);
+            File.Move(exe, old);
+            try { File.Move(PrevPath, exe); }
+            catch { File.Move(old, exe); throw; }
+        }
         // SHA256 в виде 64 шестнадцатеричных символов в нижнем регистре.
         public static string Sha256(byte[] data)
         {
@@ -260,8 +311,17 @@ namespace ZapretGui
         public static void CleanupOld()
         {
             string exe = Application.ExecutablePath;
-            foreach (string f in new[] { exe + ".old", exe + ".new" })
-                try { if (File.Exists(f)) File.Delete(f); } catch { }
+            try { if (File.Exists(exe + ".new")) File.Delete(exe + ".new"); } catch { }
+            // прошлая версия не удаляется, а остаётся как .prev — для «Вернуть прошлую версию»
+            try
+            {
+                if (File.Exists(exe + ".old"))
+                {
+                    if (File.Exists(PrevPath)) File.Delete(PrevPath);
+                    File.Move(exe + ".old", PrevPath);
+                }
+            }
+            catch { }
         }
     }
 

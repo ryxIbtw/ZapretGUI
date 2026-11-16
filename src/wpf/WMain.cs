@@ -37,6 +37,7 @@ namespace ZapretGui
         FlyoutW flyout;
         DateTime flyoutClosedAt = DateTime.MinValue;
         bool settingsOpen, welcomeActive;
+        int settingsTab;   // открытая вкладка настроек
         readonly DispatcherTimer poll = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
         readonly DispatcherTimer hintTimer = new DispatcherTimer();
 
@@ -58,6 +59,7 @@ namespace ZapretGui
             startHidden = hidden && snap == null;
             Journal.Enabled = snap == null;
             Stats.Enabled = snap == null;
+            Fx.Off = Prefs.Get("NoAnim", "0") == "1";
             L.Init();
             Theme.SetScale(1f, UiScalePref / 100f);   // DPI WPF учитывает сам
             Theme.AccentName = Prefs.Get("Accent", "auto");
@@ -106,6 +108,7 @@ namespace ZapretGui
                 MaybeAutoUpdateIpset();
                 CheckAutoApps();
                 CheckPause();
+                MaybeWeeklySummary();
                 // раз в минуту проверить сайты (но не во время полноэкранной игры, если включена «Тишина в играх»)
                 if (!netChecking && (DateTime.Now - lastNet).TotalSeconds > 60 && !(GameQuiet && FullscreenAppRunning())) CheckNet();
             };
@@ -146,6 +149,7 @@ namespace ZapretGui
                 CheckStrategyChanges();   // zapret обновили, пока программы не было? — покажем, когда окно появится
                 CheckGuiUpdated();        // сама программа обновилась — покажем описание релиза
                 QuietDiagSoon();          // через 8 секунд тихо проверить конфликты (только чтение)
+                WatchNetwork();           // сменилась сеть — включить профиль, выбранный для неё
                 ContentRendered += delegate { Dispatcher.BeginInvoke((Action)ShowPendingNews); };
             }
             new WindowInteropHelper(this).EnsureHandle();   // окно существует даже при запуске в трее
@@ -250,29 +254,45 @@ namespace ZapretGui
         void BuildSettingsPage()
         {
             var sp = new StackPanel { Margin = new Thickness(20, 0, 20, 0) };
-            Action<string> group = text =>
-            {
-                var t = W.T(text.ToUpper(), W.Caption, W.Muted, true);
-                t.Margin = new Thickness(6, sp.Children.Count == 0 ? 2 : 12, 0, 6);
-                sp.Children.Add(t);
-            };
             // строки, которые не стоят плитками на панели, — здесь
             Func<string, bool> here = k => !tiles.Contains(k);
-            group(L.T("Основное", "General"));
-            var c1 = new CardBox(); c1.Add(rowLang); c1.Add(rowTheme); c1.Add(rowSimple);
-            if (!simple) { c1.Add(rowTiles); c1.Add(rowActions); c1.Add(rowServices); }
-            if (here("guistart")) c1.Add(rowGuiStart);
-            if (here("tray")) c1.Add(rowTray);
-            c1.Add(rowHotkey); c1.Add(rowProfiles);
-            sp.Children.Add(c1);
-            group(L.T("Обход", "Bypass"));
-            var c2 = new CardBox();
-            foreach (string k in new[] { "auto", "watch", "game", "ipset" }) if (here(k)) c2.Add(RowFor(k));
-            c2.Add(rowNotify); c2.Add(rowAutoFix); c2.Add(rowSchedule); c2.Add(rowIpsetAuto); c2.Add(rowAutoApps); c2.Add(rowGameQuiet);
-            c2.Add(rowFakes);
-            sp.Children.Add(c2);
-            group(L.T("Обслуживание", "Maintenance"));
-            var c3 = new CardBox(); c3.Add(rowDiag); c3.Add(rowUpdate); c3.Add(rowGuiAutoUpdate); c3.Add(rowPortable); c3.Add(rowShortcuts); c3.Add(rowRemoveAll); sp.Children.Add(c3);
+
+            // вкладки вместо одной длинной страницы
+            var cGeneral = new CardBox(); var cBypass = new CardBox(); var cLook = new CardBox(); var cService = new CardBox();
+            cGeneral.Add(rowLang); cGeneral.Add(rowSimple);
+            if (here("guistart")) cGeneral.Add(rowGuiStart);
+            if (here("tray")) cGeneral.Add(rowTray);
+            cGeneral.Add(rowHotkey); cGeneral.Add(rowProfiles); cGeneral.Add(rowAutoApps); cGeneral.Add(rowNotify); cGeneral.Add(rowWeekly);
+
+            foreach (string k in new[] { "auto", "watch", "game", "ipset" }) if (here(k)) cBypass.Add(RowFor(k));
+            cBypass.Add(rowAutoFix); cBypass.Add(rowSchedule); cBypass.Add(rowIpsetAuto); cBypass.Add(rowGameQuiet); cBypass.Add(rowFakes);
+
+            cLook.Add(rowTheme);
+            if (!simple) { cLook.Add(rowTiles); cLook.Add(rowActions); cLook.Add(rowServices); }
+            cLook.Add(rowNoAnim);
+
+            cService.Add(rowDiag); cService.Add(rowUpdate); cService.Add(rowGuiAutoUpdate); cService.Add(rowZapretAuto); cService.Add(rowRollback);
+            cService.Add(rowVerify); cService.Add(rowCleanOld); cService.Add(rowPortable); cService.Add(rowShortcuts); cService.Add(rowRemoveAll);
+
+            var cards = new[] { cGeneral, cBypass, cLook, cService };
+            string[] names = { L.T("Основное", "General"), L.T("Обход", "Bypass"), L.T("Вид", "Look"), L.T("Обслуживание", "Maintenance") };
+            var tabRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 8) };
+            var tabsUi = new RangeTab[cards.Length];
+            Action<int> pickTab = i =>
+            {
+                settingsTab = i;
+                for (int n = 0; n < cards.Length; n++) { cards[n].Visibility = n == i ? Visibility.Visible : Visibility.Collapsed; tabsUi[n].On = n == i; }
+            };
+            for (int i = 0; i < cards.Length; i++)
+            {
+                int idx = i;
+                tabsUi[i] = new RangeTab(names[i]) { Margin = new Thickness(0, 0, 4, 0) };
+                tabsUi[i].Click += delegate { pickTab(idx); };
+                tabRow.Children.Add(tabsUi[i]);
+                }
+            sp.Children.Add(tabRow);
+            foreach (var c in cards) sp.Children.Add(c);
+            pickTab(Math.Max(0, Math.Min(cards.Length - 1, settingsTab)));
 
             var foot = Footer(
                 Tuple.Create<string, Action<FlatLink>>(L.T("Журнал событий", "Event log"), l => ShowJournal()),
@@ -295,7 +315,7 @@ namespace ZapretGui
 #endif
             if (!show) return;
             var sp = new StackPanel { Margin = new Thickness(20, 0, 20, 0), MaxWidth = 420 };
-            var logo = new Image { Source = LogoImage(76), Width = 76, Height = 76, Margin = new Thickness(0, 30, 0, 0) };
+            var logo = new Image { Source = LogoImage(64), Width = 64, Height = 64, Margin = new Thickness(0, 4, 0, 0) };
             sp.Children.Add(logo);
             var t = W.T(L.T("Добро пожаловать!", "Welcome!"), W.Status, W.Text, true);
             t.HorizontalAlignment = HorizontalAlignment.Center; t.Margin = new Thickness(0, 16, 0, 0);
@@ -311,7 +331,9 @@ namespace ZapretGui
             string[][] items = {
                 new[] { "1", L.T("Подберите стратегию", "Find a strategy"), L.T("программа сама проверит все и покажет лучшие", "the app tests all and shows the best") },
                 new[] { "2", L.T("Включите обход", "Turn the bypass on"), L.T("большой кнопкой или из значка в трее", "with the big button or from the tray icon") },
-                new[] { "3", L.T("Загляните в настройки", "Check the settings"), L.T("автозапуск, оформление, диагностика", "autostart, appearance, diagnostics") },
+                new[] { "3", L.T("Программа следит сама", "The app keeps watch"), L.T("скажет из трея, если YouTube или Discord перестали открываться", "tells you from the tray if YouTube or Discord stop opening") },
+                new[] { "4", L.T("Нужен другой сайт?", "Need another site?"), L.T("«Списки» → «Проверить сайт»", "Lists → Check a site") },
+                new[] { "5", L.T("Ставите родителям?", "Setting it up for family?"), L.T("в настройках есть простой режим: одна кнопка", "there is a simple mode in settings: one button") },
             };
             foreach (var it in items)
             {
@@ -325,7 +347,7 @@ namespace ZapretGui
             }
             tips.Child = tl;
             sp.Children.Add(tips);
-            var go = new Pill(L.T("Подобрать стратегию", "Find a strategy"), false, 44) { Margin = new Thickness(20, 24, 20, 0) };
+            var go = new Pill(L.T("Подобрать стратегию", "Find a strategy"), false, 44) { Margin = new Thickness(20, 16, 20, 0) };
             go.Click += delegate { DismissWelcome(); AutoPick(); };
             sp.Children.Add(go);
             var later = new FlatLink(L.T("Позже", "Later")) { HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 12, 0, 0) };
@@ -341,7 +363,7 @@ namespace ZapretGui
             if (!welcomeActive) return;
             welcomeActive = false;
             settingsOpen = false;
-            if (IsVisible) SlideTo(mainPage, welcomePage, -1);
+            if (IsVisible && !Fx.Off) SlideTo(mainPage, welcomePage, -1);
             else { welcomePage.Visibility = Visibility.Collapsed; mainPage.Visibility = Visibility.Visible; }
             UpdateUi();
         }
@@ -357,7 +379,7 @@ namespace ZapretGui
                 return;
             }
             Grid show = settingsOpen ? settingsPage : mainPage, hide = settingsOpen ? mainPage : settingsPage;
-            if (animate && IsVisible && hide.Visibility == Visibility.Visible) SlideTo(show, hide, settingsOpen ? 1 : -1);
+            if (animate && !Fx.Off && IsVisible && hide.Visibility == Visibility.Visible) SlideTo(show, hide, settingsOpen ? 1 : -1);
             else
             {
                 Fx.Set((TranslateTransform)show.RenderTransform, TranslateTransform.XProperty, 0);

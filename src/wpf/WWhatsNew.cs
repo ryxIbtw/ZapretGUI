@@ -84,6 +84,8 @@ namespace ZapretGui
                 string line = raw.Trim();
                 if (line == "---") break;   // дальше — английский кратко
                 string text = line.Replace("**", "").Replace("`", "");
+                // «**Заголовок группы**» в списке изменений — тоже заголовок
+                if (line.StartsWith("**") && line.EndsWith("**") && line.Length > 4) { line = "### " + text; text = line; }
                 if (line.StartsWith("#"))
                 {
                     string head = text.TrimStart('#', ' ');
@@ -139,7 +141,8 @@ namespace ZapretGui
             if (!updated) return;
             ThreadPool.QueueUserWorkItem(delegate
             {
-                string notes = SelfUpdate.ReleaseNotes(cur);
+                // сначала встроенный список изменений (работает без интернета), если его нет — описание релиза с GitHub
+                string notes = SelfUpdate.BuiltInNotes(cur) ?? SelfUpdate.ReleaseNotes(cur);
                 if (string.IsNullOrEmpty(notes)) return;
                 Post(() => { pendingGuiNews = Tuple.Create(cur.ToString(3), notes); if (IsVisible) ShowGuiNews(); });
             });

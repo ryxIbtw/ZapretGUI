@@ -48,7 +48,8 @@ $w.Close()
 
 $cscArgs = @('/nologo', '/target:winexe', '/optimize+', '/codepage:65001', "/out:$Out", "/win32icon:$ico",
     '/r:System.dll', '/r:System.Drawing.dll', '/r:System.Windows.Forms.dll', '/r:System.ServiceProcess.dll', '/r:System.Core.dll',
-    '/r:System.IO.Compression.dll', '/r:System.IO.Compression.FileSystem.dll')
+    '/r:System.IO.Compression.dll', '/r:System.IO.Compression.FileSystem.dll', '/r:System.Web.Extensions.dll',
+    "/resource:$PSScriptRoot\CHANGELOG.md,CHANGELOG.md")   # список изменений вшит в программу — для окна «Что нового»
 # -NoAdmin = тестовая сборка: без запроса прав администратора и с тестовыми режимами (--snap, --dump)
 if ($NoAdmin) { $cscArgs += '/define:TESTHOOKS' } else { $cscArgs += "/win32manifest:$src\app.manifest" }
 $fw = Split-Path $csc

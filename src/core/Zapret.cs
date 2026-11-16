@@ -482,12 +482,16 @@ namespace ZapretGui
 
         public string LatestRelease(out string zipUrl)
         {
-            string json = Download(ReleaseApi, 10000);
-            var tag = Regex.Match(json, "\"tag_name\"\\s*:\\s*\"([^\"]+)\"");
-            var zip = Regex.Match(json, "\"browser_download_url\"\\s*:\\s*\"([^\"]+\\.zip)\"");
-            if (!tag.Success || !zip.Success) throw new Exception(L.T("Не удалось получить данные о релизе", "Could not read release info"));
-            zipUrl = zip.Groups[1].Value;
-            return tag.Groups[1].Value.Trim();
+            var rel = Json.Obj(Download(ReleaseApi, 10000));
+            string tag = Json.Str(rel, "tag_name");
+            zipUrl = null;
+            foreach (var a in Json.Arr(rel, "assets"))
+            {
+                string url = Json.Str(a, "browser_download_url");
+                if (url != null && url.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)) { zipUrl = url; break; }
+            }
+            if (tag == null || zipUrl == null) throw new Exception(L.T("Не удалось получить данные о релизе", "Could not read release info"));
+            return tag.Trim();
         }
 
         // Первый запуск без zapret: скачать последний релиз Flowseal и распаковать в папку dir.
@@ -559,6 +563,8 @@ namespace ZapretGui
                 foreach (string f in Directory.GetFiles(Root, "general*.bat"))
                 {
                     if (newBats.Contains(Path.GetFileName(f))) continue;
+                    // свои стратегии (созданные в программе) остаются на месте
+                    try { if (File.ReadAllText(f).Contains(":: ZapretGUI-custom")) continue; } catch { }
                     Directory.CreateDirectory(archive);
                     File.Move(f, FreeName(archive, Path.GetFileName(f)));
                 }

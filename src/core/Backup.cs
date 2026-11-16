@@ -16,7 +16,16 @@ namespace ZapretGui
         const long MaxEntry = 32 * 1024 * 1024;
 
         // Какие настройки программы переносятся (путь к zapret, запущенный процесс и т.п. — нет).
-        static readonly string[] PrefKeys = { "Strategy", "Theme", "Accent", "Lang", "CloseToTray", "Watchdog", "Scale" };
+        static readonly string[] PrefKeys = { "Strategy", "Theme", "Accent", "Lang", "CloseToTray", "Watchdog", "Scale",
+            // с 2.5: всё, что настраивается в программе (заметки к стратегиям — отдельно, ключи «Note:…»)
+            "Tiles", "Simple", "Actions", "Favorites", "Profiles", "Profile", "NetProfiles", "Services", "AutoApps", "AutoFix", "NotifyBroken", "GameQuiet",
+            "IpsetAuto", "GuiAutoUpdate", "ZapretAutoUpdate", "Hotkey", "HotkeyKeys", "StatsKeep", "AccentCustom", "NoAnim", "ScheduleDay", "ScheduleTime", "WeeklySummary" };
+        static readonly string[] OnOffKeys = { "CloseToTray", "Watchdog", "Simple", "AutoFix", "NotifyBroken", "GameQuiet", "IpsetAuto", "GuiAutoUpdate", "ZapretAutoUpdate", "Hotkey", "NoAnim", "WeeklySummary" };
+
+        static IEnumerable<string> KeysToSave()
+        {
+            return PrefKeys.Concat(Prefs.All().Keys.Where(k => k.StartsWith("Note:")));
+        }
 
         // Файлы внутри zip, которые разрешено записывать при импорте (защита от чужих путей в архиве).
         static readonly Regex Allowed = new Regex(
@@ -27,7 +36,7 @@ namespace ZapretGui
 
         public static string AutoBackupDir
         {
-            get { return AutoBackupDirOverride ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "ZapretGUI", "backups"); }
+            get { return AutoBackupDirOverride ?? Path.Combine(Prefs.DataDir, "backups"); }
         }
 
         public static string DefaultFileName { get { return "ZapretGUI-settings-" + DateTime.Now.ToString("yyyy-MM-dd") + ".zip"; } }
@@ -63,7 +72,7 @@ namespace ZapretGui
                 sb.Append("zapret=").Append(z.LocalVersion).Append("\r\n");
                 sb.Append("date=").Append(DateTime.Now.ToString("yyyy-MM-dd HH:mm")).Append("\r\n");
                 sb.Append("flags=").Append(string.Join(",", files.Where(f => f.StartsWith("utils/")).Select(f => f.Substring(6)))).Append("\r\n");
-                foreach (string k in PrefKeys)
+                foreach (string k in KeysToSave())
                 {
                     string v = Prefs.Get(k, null);
                     if (v != null) sb.Append("pref.").Append(k).Append("=").Append(v.Replace("\r", "").Replace("\n", "")).Append("\r\n");
@@ -92,7 +101,7 @@ namespace ZapretGui
                 if (names.Any(n => n.StartsWith("lists/ipset-all", StringComparison.OrdinalIgnoreCase))) sb.Append("•  IPSet\n");
                 if (names.Any(n => n.Equals("utils/game_filter.enabled", StringComparison.OrdinalIgnoreCase))) sb.Append("•  ").Append(L.T("Игровой фильтр и порты", "Game filter and ports")).Append("\n");
                 if (names.Any(n => n.StartsWith("bin/", StringComparison.OrdinalIgnoreCase))) sb.Append("•  ").Append(L.T("Выбранные fake-файлы", "Selected fake files")).Append("\n");
-                if (info.Keys.Any(k => k.StartsWith("pref."))) sb.Append("•  ").Append(L.T("Настройки программы: стратегия, тема, язык, трей, сторож", "App settings: strategy, theme, language, tray, watchdog")).Append("\n");
+                if (info.Keys.Any(k => k.StartsWith("pref."))) sb.Append("•  ").Append(L.T("Настройки программы: стратегия, тема, язык, плитки, избранное, заметки, профили и другое", "App settings: strategy, theme, language, tiles, favorites, notes, profiles and more")).Append("\n");
                 return sb.ToString();
             }
         }
@@ -124,10 +133,11 @@ namespace ZapretGui
                 if (info.TryGetValue("flags", out flags))
                     z.UpdatesEnabled = flags.Split(',').Any(f => f.Trim().Equals("check_updates.enabled", StringComparison.OrdinalIgnoreCase));
 
-                foreach (string k in PrefKeys)
+                foreach (var kv in info)
                 {
-                    string v;
-                    if (info.TryGetValue("pref." + k, out v) && ValidPref(k, v)) Prefs.Set(k, v);
+                    if (!kv.Key.StartsWith("pref.")) continue;
+                    string k = kv.Key.Substring(5);
+                    if ((PrefKeys.Contains(k) || k.StartsWith("Note:")) && ValidPref(k, kv.Value)) Prefs.Set(k, kv.Value);
                 }
             }
             return safety;
@@ -141,11 +151,13 @@ namespace ZapretGui
                 case "Accent": return Theme.Accents.Contains(v);
                 case "Lang": return v == "ru" || v == "en";
                 case "Scale": int n; return int.TryParse(v, out n) && Theme.Scales.Contains(n);
-                case "CloseToTray":
-                case "Watchdog": return v == "0" || v == "1";
                 case "Strategy": return v.Length > 0 && v.Length < 200 && v.IndexOfAny(Path.GetInvalidFileNameChars()) < 0;
+                case "StatsKeep": return v == "7" || v == "30" || v == "90";
+                case "AccentCustom": return Regex.IsMatch(v, "^[0-9A-Fa-f]{6}$");
             }
-            return false;
+            if (OnOffKeys.Contains(key)) return v == "0" || v == "1";
+            // остальное — списки и подписи: только разумная длина (значения читаются с проверкой при использовании)
+            return v.Length < 4000;
         }
 
         static Dictionary<string, string> ReadManifest(ZipArchive zip)

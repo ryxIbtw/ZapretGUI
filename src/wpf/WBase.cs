@@ -163,6 +163,23 @@ namespace ZapretGui
             return it;
         }
 
+        // Вложенное меню: пункт со стрелкой, внутри — свои пункты (AddTo).
+        public static MenuItem Sub(ContextMenu m, string text)
+        {
+            var it = new MenuItem { Header = text };
+            m.Items.Add(it);
+            return it;
+        }
+
+        public static MenuItem AddTo(MenuItem parent, string text, bool current, Action click)
+        {
+            var it = new MenuItem { Header = text, IsChecked = current };
+            if (current) it.Foreground = W.Accent;
+            if (click != null) it.Click += delegate { click(); };
+            parent.Items.Add(it);
+            return it;
+        }
+
         public static void Header(ContextMenu m, string text)
         {
             var it = new MenuItem { Header = text, IsEnabled = false };

@@ -157,7 +157,8 @@ namespace ZapretGui
         bool simple;
         List<string> tiles = new List<string>();
         SettingRowW rowSimple, rowTiles, rowNotify, rowAutoFix, rowSchedule, rowServices, rowIpsetAuto,
-            rowHotkey, rowProfiles, rowAutoApps, rowGameQuiet, rowGuiAutoUpdate, rowPortable, rowShortcuts, rowRemoveAll, rowActions;
+            rowHotkey, rowProfiles, rowAutoApps, rowGameQuiet, rowGuiAutoUpdate, rowPortable, rowShortcuts, rowRemoveAll, rowActions,
+            rowWeekly, rowNoAnim, rowZapretAuto, rowRollback, rowVerify, rowCleanOld;
 
         void LoadLayoutPrefs()
         {
@@ -210,12 +211,24 @@ namespace ZapretGui
             rowUpdate = new SettingRowW(L.T("Обновления", "Updates"), false, "download", "", false, rh);
             rowNotify = new SettingRowW(L.T("Сообщать о сбоях", "Notify about problems"), true, "alert", L.T("уведомление из трея, когда сайты перестали открываться", "tray message when sites stop opening"), false, rh);
             rowAutoFix = new SettingRowW(L.T("Автовосстановление", "Auto-recovery"), true, "shield", L.T("5 минут не работает — пробовать другие стратегии", "5 minutes down — try other strategies"), false, rh);
-            rowSchedule = new SettingRowW(L.T("Подбор по расписанию", "Scheduled test"), true, "chart", L.T("воскресенье 4:00 · лучшая применится сама", "Sunday 4:00 · the best is applied"), false, rh);
-            rowSchedule.Click += delegate { SetSchedule(!scheduleOn); };
+            rowSchedule = new SettingRowW(L.T("Подбор по расписанию", "Scheduled test"), false, "chart", L.T("быстрый подбор; лучшая применится сама", "a quick test; the best is applied"), false, rh);
+            rowSchedule.Click += delegate { ShowScheduleMenu(); };
             rowActions = new SettingRowW(L.T("Кнопки внизу панели", "Buttons at the bottom"), false, "list", L.T("что показывать рядом с «Ещё»", "what to show next to “More”"), false, rh);
             rowActions.Click += delegate { ShowActionsMenu(); };
-            rowHotkey = new SettingRowW(L.T("Горячая клавиша Ctrl+Alt+Z", "Hotkey Ctrl+Alt+Z"), true, "power", L.T("включить или выключить обход откуда угодно", "turn the bypass on or off from anywhere"), false, rh);
-            rowHotkey.Click += delegate { ToggleHotkey(); };
+            rowHotkey = new SettingRowW(L.T("Горячая клавиша", "Hotkey"), false, "power", L.T("включить или выключить обход откуда угодно", "turn the bypass on or off from anywhere"), false, rh);
+            rowHotkey.Click += delegate { ShowHotkeyMenu(); };
+            rowWeekly = new SettingRowW(L.T("Сводка за неделю", "Weekly summary"), true, "chart", L.T("раз в неделю из трея: сколько работало и сколько сбоев", "weekly from the tray: uptime and outages"), false, rh);
+            rowWeekly.Click += delegate { WeeklyOn = !WeeklyOn; UpdateUi(); };
+            rowNoAnim = new SettingRowW(L.T("Без анимаций", "No animations"), true, "spark", L.T("всё переключается сразу", "everything switches instantly"), false, rh);
+            rowNoAnim.Click += delegate { Fx.Off = !Fx.Off; Prefs.Set("NoAnim", Fx.Off ? "1" : "0"); UpdateUi(); };
+            rowZapretAuto = new SettingRowW(L.T("Обновлять zapret сам", "Update zapret by itself"), true, "download", L.T("при запуске; обход ненадолго перезапустится", "on start; the bypass restarts briefly"), false, rh);
+            rowZapretAuto.Click += delegate { ZapretAutoUpdate = !ZapretAutoUpdate; UpdateUi(); };
+            rowRollback = new SettingRowW(L.T("Вернуть прошлую версию программы", "Roll back the app"), false, "chevronLeft", L.T("если после обновления стало хуже", "if an update made things worse"), true, rh);
+            rowRollback.Click += delegate { RollbackGui(); };
+            rowVerify = new SettingRowW(L.T("Проверить файлы zapret", "Verify zapret files"), false, "shield", L.T("не удалил ли антивирус winws.exe или драйвер", "did an antivirus remove winws.exe or the driver"), true, rh);
+            rowVerify.Click += delegate { VerifyZapret(); };
+            rowCleanOld = new SettingRowW(L.T("Очистить старые стратегии", "Clean up old strategies"), false, "x", L.T("папка old-strategies после обновлений zapret", "the old-strategies folder left by zapret updates"), true, rh);
+            rowCleanOld.Click += delegate { CleanOldStrategies(); };
             rowProfiles = new SettingRowW(L.T("Профили", "Profiles"), false, "layers", L.T("стратегия, игровой фильтр и IPSet одним кликом", "strategy, game filter and IPSet in one click"), false, rh);
             rowProfiles.Click += delegate { ShowProfilesMenu(null); };
             rowAutoApps = new SettingRowW(L.T("Обход вместе с программами", "Bypass with programs"), false, "monitor", L.T("включать, когда запущена игра или Discord", "turn on while a game or Discord runs"), false, rh);
@@ -492,7 +505,7 @@ namespace ZapretGui
             try { recs = StatsSource(from); } catch { recs = new List<StatRec>(); }
             var segs = Stats.Segments(recs, 3, from, to);
             // появились новые данные — полоса мягко «вспыхивает»
-            if (recs.Count != todayCount && todayCount >= 0 && IsVisible)
+            if (recs.Count != todayCount && todayCount >= 0 && IsVisible && !Fx.Off)
                 todayBar.BeginAnimation(OpacityProperty, new System.Windows.Media.Animation.DoubleAnimation(0.55, 1, TimeSpan.FromMilliseconds(600)) { EasingFunction = Fx.Out });
             todayCount = recs.Count;
             todayBar.Set(segs, from, to, new List<DateTime>(), false);

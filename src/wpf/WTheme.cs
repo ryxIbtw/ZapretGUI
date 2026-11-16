@@ -113,14 +113,27 @@ namespace ZapretGui
     <Setter Property='Foreground' Value='{DynamicResource Text}'/>
     <Setter Property='Template'><Setter.Value>
       <ControlTemplate TargetType='MenuItem'>
-        <Border x:Name='bd' Background='Transparent' CornerRadius='6' Padding='10,6,16,6' MinWidth='150'>
-          <DockPanel>
-            <ContentPresenter x:Name='ic' ContentSource='Icon' DockPanel.Dock='Left' Width='14' Height='14' Margin='0,0,9,0' VerticalAlignment='Center'/>
-            <TextBlock x:Name='chk' DockPanel.Dock='Left' Text='✓' Width='16' Foreground='{DynamicResource Accent}' VerticalAlignment='Center'/>
-            <ContentPresenter ContentSource='Header' RecognizesAccessKey='False' VerticalAlignment='Center'/>
-          </DockPanel>
-        </Border>
+        <Grid>
+          <Border x:Name='bd' Background='Transparent' CornerRadius='6' Padding='10,6,16,6' MinWidth='150'>
+            <DockPanel>
+              <ContentPresenter x:Name='ic' ContentSource='Icon' DockPanel.Dock='Left' Width='14' Height='14' Margin='0,0,9,0' VerticalAlignment='Center'/>
+              <TextBlock x:Name='chk' DockPanel.Dock='Left' Text='✓' Width='16' Foreground='{DynamicResource Accent}' VerticalAlignment='Center'/>
+              <TextBlock x:Name='arrow' DockPanel.Dock='Right' Text='›' FontSize='15' Margin='14,-2,-6,0' Foreground='{DynamicResource Muted}' Visibility='Collapsed' VerticalAlignment='Center'/>
+              <ContentPresenter ContentSource='Header' RecognizesAccessKey='False' VerticalAlignment='Center'/>
+            </DockPanel>
+          </Border>
+          <Popup x:Name='PART_Popup' Placement='Right' HorizontalOffset='-4' VerticalOffset='-5' AllowsTransparency='True' Focusable='False' PopupAnimation='Fade'
+                 IsOpen='{Binding IsSubmenuOpen, RelativeSource={RelativeSource TemplatedParent}}'>
+            <Border Background='{DynamicResource Surface}' BorderBrush='{DynamicResource Line}' BorderThickness='1' CornerRadius='9' Padding='4' Margin='0,0,6,6'>
+              <Border.Effect><DropShadowEffect BlurRadius='14' ShadowDepth='3' Opacity='0.35'/></Border.Effect>
+              <ScrollViewer VerticalScrollBarVisibility='Auto' HorizontalScrollBarVisibility='Disabled' CanContentScroll='False' MaxHeight='420'>
+                <StackPanel IsItemsHost='True' KeyboardNavigation.DirectionalNavigation='Cycle'/>
+              </ScrollViewer>
+            </Border>
+          </Popup>
+        </Grid>
         <ControlTemplate.Triggers>
+          <Trigger Property='HasItems' Value='True'><Setter TargetName='arrow' Property='Visibility' Value='Visible'/></Trigger>
           <Trigger Property='Icon' Value='{x:Null}'><Setter TargetName='ic' Property='Visibility' Value='Collapsed'/></Trigger>
           <Trigger Property='IsChecked' Value='False'><Setter TargetName='chk' Property='Text' Value=''/></Trigger>
           <Trigger Property='IsHighlighted' Value='True'><Setter TargetName='bd' Property='Background' Value='{DynamicResource SurfaceHover}'/></Trigger>

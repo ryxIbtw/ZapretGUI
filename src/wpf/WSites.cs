@@ -59,10 +59,25 @@ namespace ZapretGui
         // Проверка своих сервисов (вызывается из фоновой проверки сайтов).
         void ProbeServices()
         {
-            foreach (var s in Services)
+            // все сразу, а не по очереди: три неоткрывающихся сервиса не должны задерживать проверку на 15 секунд
+            var list = Services;
+            var threads = new List<Thread>();
+            foreach (var s in list)
             {
-                long ms = NetCheck.ProbeMs(s.Url, 5000);
-                lock (serviceMs) serviceMs[s.Url] = ms;
+                string url = s.Url;
+                var t = new Thread(() =>
+                {
+                    long ms = NetCheck.ProbeMs(url, 5000);
+                    lock (serviceMs) serviceMs[url] = ms;
+                }) { IsBackground = true };
+                threads.Add(t);
+                t.Start();
+            }
+            DateTime deadline = DateTime.UtcNow.AddMilliseconds(7000);
+            foreach (var t in threads)
+            {
+                int left = (int)(deadline - DateTime.UtcNow).TotalMilliseconds;
+                if (left > 0) t.Join(left);
             }
             servicesChecked = true;
         }

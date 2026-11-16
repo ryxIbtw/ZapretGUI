@@ -124,8 +124,14 @@ Check "проверка DNS отвечает: $($dns.Title)" ($dns -ne $null -an
 
 # ---------- описание релиза ----------
 "Разное"
-$un = (T 'SelfUpdate').GetMethod('JsonUnescape', $BF).Invoke($null, @('a\nb \"c\" Ж'))
-Check 'разбор JSON-строки' ($un -eq "a`nb `"c`" Ж")
+$J = T 'Json'
+$o = $J.GetMethod('Obj', $BF).Invoke($null, @('{"tag_name":"v9.9.9","body":"a\nb \"c\" Ж","assets":[{"name":"ZapretGUI.exe","browser_download_url":"https://x/ZapretGUI.exe"},{"name":"other.zip"}]}'))
+Check 'разбор JSON: строки' ($J.GetMethod('Str', $BF).Invoke($null, @($o, 'tag_name')) -eq 'v9.9.9' -and $J.GetMethod('Str', $BF).Invoke($null, @($o, 'body')) -eq "a`nb `"c`" Ж")
+$arr = $J.GetMethod('Arr', $BF).Invoke($null, @($o, 'assets'))
+Check "разбор JSON: списки (получилось $($arr.Count))" ($arr.Count -eq 2 -and $arr[0]['name'] -eq 'ZapretGUI.exe')
+$cur = (T 'SelfUpdate').GetProperty('Current', $BF).GetValue($null)
+$notes = (T 'SelfUpdate').GetMethod('BuiltInNotes', $BF).Invoke($null, @($cur))
+Check "встроенный список изменений для версии $cur" ($notes -ne $null -and $notes.Length -gt 50)
 
 ""
 "Итог: прошло $script:pass, не прошло $script:fail"

@@ -28,16 +28,54 @@ namespace ZapretGui
             if (h == IntPtr.Zero) return;
             if (hotkeyRegistered) { UnregisterHotKey(h, HotkeyId); hotkeyRegistered = false; }
             if (!HotkeyOn || snapPath != null) return;
-            hotkeyRegistered = RegisterHotKey(h, HotkeyId, 0x0001 | 0x0002 | 0x4000, 0x5A);   // Alt + Ctrl, без повторов; Z
-            if (!hotkeyRegistered) Toast(L.T("Ctrl+Alt+Z уже занята другой программой", "Ctrl+Alt+Z is already used by another app"), true);
+            uint mods, vk;
+            HotkeyKeys(out mods, out vk);
+            hotkeyRegistered = RegisterHotKey(h, HotkeyId, mods | 0x4000, vk);   // 0x4000 — без повторов при удержании
+            if (!hotkeyRegistered) Toast(HotkeyText() + L.T(" уже занята другой программой — выберите другое сочетание", " is already used by another app — pick another one"), true);
         }
+
+        // Сочетание хранится как «модификаторы,код клавиши»: Alt = 1, Ctrl = 2, Shift = 4, Win = 8. По умолчанию Ctrl+Alt+Z.
+        static void HotkeyKeys(out uint mods, out uint vk)
+        {
+            mods = 3; vk = 0x5A;
+            var p = Prefs.Get("HotkeyKeys", "3,90").Split(',');
+            uint a, b;
+            if (p.Length == 2 && uint.TryParse(p[0], out a) && uint.TryParse(p[1], out b) && b > 0 && a < 16) { mods = a; vk = b; }
+        }
+
+        internal static string HotkeyText(uint mods, uint vk)
+        {
+            string s = ((mods & 2) != 0 ? "Ctrl+" : "") + ((mods & 1) != 0 ? "Alt+" : "") + ((mods & 4) != 0 ? "Shift+" : "") + ((mods & 8) != 0 ? "Win+" : "");
+            string key = System.Windows.Input.KeyInterop.KeyFromVirtualKey((int)vk).ToString();
+            if (key.Length == 2 && key[0] == 'D' && char.IsDigit(key[1])) key = key.Substring(1);   // D1 → 1
+            return s + key;
+        }
+        static string HotkeyText() { uint m, v; HotkeyKeys(out m, out v); return HotkeyText(m, v); }
 
         void ToggleHotkey()
         {
             HotkeyOn = !HotkeyOn;
             ApplyHotkey();
-            Journal.Add(HotkeyOn ? L.T("Горячая клавиша Ctrl+Alt+Z включена", "Hotkey Ctrl+Alt+Z on") : L.T("Горячая клавиша выключена", "Hotkey off"));
+            Journal.Add(HotkeyOn ? L.T("Горячая клавиша включена: ", "Hotkey on: ") + HotkeyText() : L.T("Горячая клавиша выключена", "Hotkey off"));
             UpdateUi();
+        }
+
+        void ShowHotkeyMenu()
+        {
+            var m = WMenu.Create();
+            WMenu.Add(m, HotkeyOn ? L.T("Выключить", "Turn off") : L.T("Включить (", "Turn on (") + HotkeyText() + ")", false, ToggleHotkey);
+            WMenu.Add(m, L.T("Изменить сочетание…", "Change the shortcut…"), false, () =>
+            {
+                var w = new HotkeyW(this);
+                w.ShowDialog();
+                if (w.Vk == 0) return;
+                Prefs.Set("HotkeyKeys", w.Mods + "," + w.Vk);
+                HotkeyOn = true;
+                ApplyHotkey();
+                Journal.Add(L.T("Горячая клавиша: ", "Hotkey: ") + HotkeyText());
+                UpdateUi();
+            });
+            WMenu.ShowBelowRight(m, rowHotkey);
         }
 
         // ---------- команды из командной строки: --on, --off, --toggle ----------
@@ -83,7 +121,11 @@ namespace ZapretGui
                 WMenu.Add(m, pr.Name + "   ·  " + pr.Strategy, pr.Name == cur, () => ApplyProfile(pr));
             }
             if (list.Count > 0) WMenu.Sep(m);
+            NetProfileItems(m, list);   // «в этой сети включать профиль…»
             WMenu.Add(m, L.T("Сохранить текущие настройки как профиль…", "Save current settings as a profile…"), false, SaveProfile);
+            var file = WMenu.Sub(m, L.T("Файл", "File"));
+            WMenu.AddTo(file, L.T("Сохранить профили в файл…", "Save profiles to a file…"), false, ExportProfiles).IsEnabled = list.Count > 0;
+            WMenu.AddTo(file, L.T("Загрузить профили из файла…", "Load profiles from a file…"), false, ImportProfiles);
             foreach (var p in list)
             {
                 var pr = p;
@@ -191,7 +233,15 @@ namespace ZapretGui
             {
                 int state;
                 if (SHQueryUserNotificationState(out state) != 0) return false;
-                return state == 2 || state == 3 || state == 4;   // занят полноэкранным приложением, игрой (D3D) или показом презентации
+                if (state == 3) return true;      // полноэкранная игра (Direct3D)
+                if (state != 2) return false;     // 2 — любое окно во весь экран: игра «в окне без рамки» или видео
+                // видео в браузере или плеере игрой не считается — иначе в статистике появляются пустые места
+                uint pid;
+                GetWindowThreadProcessId(GetForegroundWindow(), out pid);
+                string name = Process.GetProcessById((int)pid).ProcessName.ToLowerInvariant();
+                string[] notGames = { "chrome", "msedge", "firefox", "opera", "opera_gx", "brave", "browser", "vivaldi", "yandex", "vlc", "mpc-hc", "mpc-hc64", "mpc-be", "mpc-be64",
+                    "potplayer", "potplayermini64", "wmplayer", "explorer", "powerpnt", "obs64", "discord", "telegram", "zapretgui" };
+                return Array.IndexOf(notGames, name) < 0;
             }
             catch { return false; }
         }
@@ -250,6 +300,7 @@ namespace ZapretGui
                 SilentGuiUpdate();
                 return;
             }
+            OnNewZapret();   // тихое обновление zapret или уведомление из трея
             if (newGui != null) ShowBanner(L.T("Вышла ZapretGUI v", "ZapretGUI v") + newGui + L.T("", " is out"), L.T("Обновить", "Update"), UpdateGui, W.Accent, 0);
             else if (newVersion != null) ShowBanner(L.T("Вышла zapret v", "zapret v") + newVersion + L.T("", " is out"), L.T("Обновить", "Update"), UpdateZapret, W.Accent, 0);
         }
@@ -368,5 +419,7 @@ namespace ZapretGui
         [DllImport("user32.dll")] static extern bool RegisterHotKey(IntPtr hWnd, int id, uint mods, uint vk);
         [DllImport("user32.dll")] static extern bool UnregisterHotKey(IntPtr hWnd, int id);
         [DllImport("shell32.dll")] static extern int SHQueryUserNotificationState(out int state);
+        [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
+        [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint pid);
     }
 }

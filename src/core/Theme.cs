@@ -26,7 +26,10 @@ namespace ZapretGui
                     object v = k == null ? null : k.GetValue("AccentColor");
                     if (!(v is int)) return -1;
                     int abgr = (int)v;
-                    return ((abgr & 0xFF) << 16) | (abgr & 0xFF00) | ((abgr >> 16) & 0xFF);
+                    int r = abgr & 0xFF, g = (abgr >> 8) & 0xFF, b = (abgr >> 16) & 0xFF;
+                    // серый акцент Windows не годится: включённое не отличить от выключенного — тогда берётся обычный цвет программы
+                    if (Math.Max(r, Math.Max(g, b)) - Math.Min(r, Math.Min(g, b)) < 40) return -1;
+                    return (r << 16) | (g << 8) | b;
                 }
             }
             catch { return -1; }
@@ -71,7 +74,7 @@ namespace ZapretGui
         public static Color AccentSample(string name)
         {
             if (name == "auto") name = IsLight ? "blue" : "green";
-            if (name == "windows") { int w = WindowsAccentRgb(); return w >= 0 ? C(w) : C(0x0078D4); }
+            if (name == "windows") { int w = WindowsAccentRgb(); return w >= 0 ? C(w) : C(IsLight ? 0x2563EB : 0x34D399); }
             if (name == "custom") return C(CustomRgb);
             if (name == "blue" && IsLight) return C(0x2563EB);
             int[] p = Palette[name];

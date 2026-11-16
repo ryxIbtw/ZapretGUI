@@ -15,8 +15,11 @@ namespace ZapretGui
         public static readonly IEasingFunction InOut = new SineEase { EasingMode = EasingMode.EaseInOut };
 
         // Плавно меняет числовое свойство (прозрачность, сдвиг, масштаб…).
+        public static bool Off;   // настройка «Без анимаций»: всё переключается сразу
+
         public static void To(IAnimatable target, DependencyProperty prop, double to, double ms, IEasingFunction ease = null)
         {
+            if (Off) { Set(target, prop, to); return; }
             var a = new DoubleAnimation(to, TimeSpan.FromMilliseconds(ms)) { EasingFunction = ease ?? Out };
             target.BeginAnimation(prop, a);
         }

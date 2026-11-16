@@ -143,7 +143,7 @@ namespace ZapretGui
         public void SetOn(bool value, bool animate)
         {
             if (initialized && on == value) return;   // ничего не поменялось — ничего не трогаем
-            if (!initialized) animate = false;        // новая кнопка сразу в нужном состоянии, без волны
+            if (!initialized || Fx.Off) animate = false;   // новая кнопка сразу в нужном состоянии, без волны; и при «Без анимаций»
             initialized = true;
             bool turnedOn = value && !on;
             on = value;
@@ -163,7 +163,7 @@ namespace ZapretGui
         // мягкое «дыхание» света: только пока обход включён и кнопку видно
         void UpdateBreath()
         {
-            bool want = on && !compact && IsVisible;
+            bool want = on && !compact && IsVisible && !Fx.Off;
             if (want == breathing) return;
             breathing = want;
             if (want)

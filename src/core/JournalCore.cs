@@ -17,7 +17,7 @@ namespace ZapretGui
 
         public static string FilePath
         {
-            get { return PathOverride ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "ZapretGUI", "events.log"); }
+            get { return PathOverride ?? Path.Combine(Prefs.DataDir, "events.log"); }
         }
 
         public static void Add(string text)

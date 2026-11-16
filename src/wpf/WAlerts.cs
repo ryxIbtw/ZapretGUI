@@ -188,38 +188,50 @@ namespace ZapretGui
             close.Click += delegate { HideBanner(bannerPriority); };
             Grid.SetColumn(close, 2); g.Children.Add(close);
             banner.Child = g;
-            if (pendingBanner != null) { var p = pendingBanner; pendingBanner = null; ShowBanner(p.Item1, p.Item2, p.Item3, p.Item4, p.Item5); }
+            RenderBanner();
             return banner;
         }
 
-        Tuple<string, string, Action, Brush, int> pendingBanner;
+        // Очередь предупреждений: показывается самое важное, остальные ждут (в скобках — сколько ещё).
+        readonly SortedDictionary<int, Tuple<string, string, Action, Brush>> banners = new SortedDictionary<int, Tuple<string, string, Action, Brush>>();
 
         void ShowBanner(string text, string action, Action act, Brush color, int priority)
         {
-            if (banner == null) { pendingBanner = Tuple.Create(text, action, act, color, priority); return; }
-            if (banner.Visibility == Visibility.Visible && priority > bannerPriority) return;   // уже показано более важное
-            bannerPriority = priority;
-            bannerText.Text = text;
-            bannerText.ToolTip = text;
-            bannerAction.Text = action ?? "";
-            bannerAction.Visibility = action == null ? Visibility.Collapsed : Visibility.Visible;
-            bannerDo = act;
-            var c = ((SolidColorBrush)color).Color;
-            banner.Background = new SolidColorBrush(W.A(c, Theme.IsLight ? 0.10 : 0.12));
-            banner.BorderBrush = new SolidColorBrush(W.A(c, 0.35));
-            if (banner.Visibility != Visibility.Visible)
-            {
-                banner.Visibility = Visibility.Visible;
-                if (rootGrid != null) rootGrid.Height = Ht + BannerSpace;
-            }
+            banners[priority] = Tuple.Create(text, action, act, color);
+            RenderBanner();
         }
 
         void HideBanner(int priority)
         {
-            if (banner == null || banner.Visibility != Visibility.Visible || priority != bannerPriority) return;
-            banner.Visibility = Visibility.Collapsed;
-            bannerPriority = int.MaxValue;
-            if (rootGrid != null) rootGrid.Height = Ht;
+            if (banners.Remove(priority)) RenderBanner();
+        }
+
+        void RenderBanner()
+        {
+            if (banner == null) return;
+            if (banners.Count == 0)
+            {
+                if (banner.Visibility == Visibility.Visible)
+                {
+                    banner.Visibility = Visibility.Collapsed;
+                    if (rootGrid != null) rootGrid.Height = Ht;
+                }
+                bannerPriority = int.MaxValue;
+                return;
+            }
+            var first = banners.First();
+            var b = first.Value;
+            bannerPriority = first.Key;
+            bannerText.Text = b.Item1 + (banners.Count > 1 ? L.T("   (и ещё ", "   (+") + (banners.Count - 1) + ")" : "");
+            bannerText.ToolTip = b.Item1;
+            bannerAction.Text = b.Item2 ?? "";
+            bannerAction.Visibility = b.Item2 == null ? Visibility.Collapsed : Visibility.Visible;
+            bannerDo = b.Item3;
+            var c = ((SolidColorBrush)b.Item4).Color;
+            banner.Background = new SolidColorBrush(W.A(c, Theme.IsLight ? 0.10 : 0.12));
+            banner.BorderBrush = new SolidColorBrush(W.A(c, 0.35));
+            banner.Visibility = Visibility.Visible;
+            if (rootGrid != null) rootGrid.Height = Ht + BannerSpace;
         }
     }
 }
