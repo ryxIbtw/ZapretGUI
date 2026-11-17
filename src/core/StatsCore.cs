@@ -17,6 +17,19 @@ namespace ZapretGui
         public int Yt, YtMax, Dc, DcMax;
         public int YtMs = -1, DcMs = -1;   // среднее время ответа открывшихся адресов, -1 — ни один не открылся
         public bool Net = true;    // интернет вообще был (если не открылось ничего, проверяется обычный сайт)
+        public string Extra = "";  // свои сервисы: «Twitch=120,Example=-1» (мс или -1)
+
+        // Время ответа своего сервиса в этой записи: мс, -1 — не открылся, null — его тогда не проверяли.
+        public long? ServiceMs(string name)
+        {
+            foreach (string part in (Extra ?? "").Split(','))
+            {
+                int i = part.LastIndexOf('=');
+                long v;
+                if (i > 0 && part.Substring(0, i) == name && long.TryParse(part.Substring(i + 1), out v)) return v;
+            }
+            return null;
+        }
     }
 
     // Отрезок на полосе. Kind: 0 — нет данных, 1 — обход выключен, 2 — нет интернета, 3 — работает, 4 — частично, 5 — не работает.
@@ -111,15 +124,68 @@ namespace ZapretGui
             return res;
         }
 
+        // Карта «день недели × час»: доля времени с перебоями (YouTube или Discord); -1 — нет данных. [0] — понедельник.
+        public static double[,] FailByWeekdayHour(List<StatRec> recs, DateTime from, DateTime to)
+        {
+            var all = new double[7, 24]; var bad = new double[7, 24];
+            for (int i = 0; i < recs.Count; i++)
+            {
+                DateTime a, b;
+                Span(recs, i, from, to, out a, out b);
+                if (b <= a) continue;
+                int k = KindOf(recs[i], 3);
+                if (k < 3) continue;
+                int d = ((int)a.DayOfWeek + 6) % 7;
+                double s = (b - a).TotalSeconds;
+                all[d, a.Hour] += s;
+                if (k > 3) bad[d, a.Hour] += s;
+            }
+            var res = new double[7, 24];
+            for (int d = 0; d < 7; d++) for (int h = 0; h < 24; h++) res[d, h] = all[d, h] > 0 ? bad[d, h] / all[d, h] : -1;
+            return res;
+        }
+
+        // Для сравнения стратегий: доля времени без перебоев по дням, отдельно для каждой стратегии; -1 — в тот день её не было.
+        public static Dictionary<string, double[]> UpByDayPerStrategy(List<StatRec> recs, DateTime from, int days)
+        {
+            var all = new Dictionary<string, double[]>(); var ok = new Dictionary<string, double[]>();
+            DateTime to = from.AddDays(days);
+            for (int i = 0; i < recs.Count; i++)
+            {
+                var r = recs[i];
+                if (!r.On || !r.Net || string.IsNullOrEmpty(r.Strategy)) continue;
+                DateTime a, b;
+                Span(recs, i, from, to, out a, out b);
+                if (b <= a) continue;
+                int k = KindOf(r, 3);
+                if (k < 3) continue;
+                int d = (int)(a.Date - from.Date).TotalDays;
+                if (d < 0 || d >= days) continue;
+                if (!all.ContainsKey(r.Strategy)) { all[r.Strategy] = new double[days]; ok[r.Strategy] = new double[days]; }
+                double s = (b - a).TotalSeconds;
+                all[r.Strategy][d] += s;
+                if (k == 3) ok[r.Strategy][d] += s;
+            }
+            var res = new Dictionary<string, double[]>();
+            foreach (var kv in all)
+            {
+                var v = new double[days];
+                for (int d = 0; d < days; d++) v[d] = kv.Value[d] > 600 ? 100 * ok[kv.Key][d] / kv.Value[d] : -1;   // меньше 10 минут за день — мало данных
+                res[kv.Key] = v;
+            }
+            return res;
+        }
+
         // Записи в CSV (для Excel): время; обход; стратегия; YouTube; Discord; пинг; интернет.
         public static void ExportCsv(List<StatRec> recs, string path)
         {
             var sb = new StringBuilder();
-            sb.Append("time;bypass_on;strategy;youtube_ok;youtube_total;discord_ok;discord_total;youtube_ms;discord_ms;internet\r\n");
+            sb.Append("time;bypass_on;strategy;youtube_ok;youtube_total;discord_ok;discord_total;youtube_ms;discord_ms;internet;own_services\r\n");
             foreach (var r in recs)
                 sb.Append(r.T.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)).Append(';').Append(r.On ? 1 : 0).Append(';')
                   .Append((r.Strategy ?? "").Replace(";", ",")).Append(';').Append(r.Yt).Append(';').Append(r.YtMax).Append(';')
-                  .Append(r.Dc).Append(';').Append(r.DcMax).Append(';').Append(r.YtMs).Append(';').Append(r.DcMs).Append(';').Append(r.Net ? 1 : 0).Append("\r\n");
+                  .Append(r.Dc).Append(';').Append(r.DcMax).Append(';').Append(r.YtMs).Append(';').Append(r.DcMs).Append(';').Append(r.Net ? 1 : 0)
+                  .Append(';').Append((r.Extra ?? "").Replace(";", " ")).Append("\r\n");
             File.WriteAllText(path, sb.ToString(), new UTF8Encoding(true));
         }
         public const int MaxGapSec = 150;     // проверка раз в минуту; дольше — значит, программа не работала
@@ -138,7 +204,8 @@ namespace ZapretGui
             if (!Enabled || r == null) return;
             string line = string.Join("\t", new[] {
                 r.T.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture), r.On ? "1" : "0", (r.Strategy ?? "").Replace("\t", " "),
-                r.Yt.ToString(), r.YtMax.ToString(), r.Dc.ToString(), r.DcMax.ToString(), r.YtMs.ToString(), r.DcMs.ToString(), r.Net ? "1" : "0" });
+                r.Yt.ToString(), r.YtMax.ToString(), r.Dc.ToString(), r.DcMax.ToString(), r.YtMs.ToString(), r.DcMs.ToString(), r.Net ? "1" : "0",
+                (r.Extra ?? "").Replace("\t", " ") });
             lock (sync)
             {
                 try
@@ -176,6 +243,7 @@ namespace ZapretGui
             int.TryParse(p[3], out r.Yt); int.TryParse(p[4], out r.YtMax);
             int.TryParse(p[5], out r.Dc); int.TryParse(p[6], out r.DcMax);
             int.TryParse(p[7], out r.YtMs); int.TryParse(p[8], out r.DcMs);
+            if (p.Length > 10) r.Extra = p[10];
             return r;
         }
 
@@ -282,6 +350,38 @@ namespace ZapretGui
                 if (ms >= 0 && kind >= 3) { last.MsSum += ms; last.MsN++; }
             }
             return segs;
+        }
+
+        // Доля времени, когда свой сервис открывался (при включённом обходе и интернете); -1 — нет данных.
+        public static double ServiceUpPct(List<StatRec> recs, string name, DateTime from, DateTime to)
+        {
+            double all = 0, ok = 0;
+            for (int i = 0; i < recs.Count; i++)
+            {
+                if (!recs[i].On || !recs[i].Net) continue;
+                long? ms = recs[i].ServiceMs(name);
+                if (ms == null) continue;
+                DateTime a, b;
+                Span(recs, i, from, to, out a, out b);
+                if (b <= a) continue;
+                double s = (b - a).TotalSeconds;
+                all += s;
+                if (ms >= 0) ok += s;
+            }
+            return all > 0 ? 100 * ok / all : -1;
+        }
+
+        // Имена своих сервисов, которые встречаются в записях.
+        public static List<string> ServiceNames(List<StatRec> recs)
+        {
+            var names = new List<string>();
+            foreach (var r in recs)
+                foreach (string part in (r.Extra ?? "").Split(','))
+                {
+                    int i = part.LastIndexOf('=');
+                    if (i > 0 && !names.Contains(part.Substring(0, i))) names.Add(part.Substring(0, i));
+                }
+            return names;
         }
 
         // Доля времени, когда сервис работал полностью (из времени, когда обход был включён и был интернет); -1 — нет данных.

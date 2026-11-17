@@ -346,7 +346,9 @@ namespace ZapretGui
                         T = DateTime.Now, On = Active, Strategy = Active ? (activeStrategy ?? selected) : "", Net = net,
                         Yt = yt, YtMax = NetCheck.YouTube.Length, Dc = dc, DcMax = NetCheck.Discord.Length,
                         YtMs = AvgMs(ms, 0, NetCheck.YouTube.Length), DcMs = AvgMs(ms, NetCheck.YouTube.Length, NetCheck.Discord.Length),
+                        Extra = ServicesExtra(),   // свои сервисы — тоже в статистику
                     });
+                    CheckServiceAlerts(net);
                     netChecking = false;
                     netUp = net;
                     RefreshToday();
@@ -423,13 +425,17 @@ namespace ZapretGui
             if (busy) return;
             strategies = z.Strategies();
             if (strategies.Count == 0) { Toast(L.T("Не найдено ни одной стратегии (.bat)", "No strategies (.bat) found"), true); return; }
-            if (!FlowTest.CurlAvailable) { Toast(L.T("Не найден curl.exe — он нужен для проверок", "curl.exe not found — it is needed for the checks"), true); return; }
+            if (!FlowTest.CurlAvailable &&
+                AskW.Show(this, L.T("В Windows нет curl.exe (бывает на старых Windows 10). Подбор пройдёт упрощённо: по одной проверке HTTPS на сайт вместо трёх (HTTP, TLS 1.2, TLS 1.3). Режим DPI будет недоступен.\n\nПродолжить?",
+                        "Windows has no curl.exe (happens on older Windows 10). The test will be simplified: one HTTPS check per site instead of three (HTTP, TLS 1.2, TLS 1.3). DPI mode won't be available.\n\nContinue?"),
+                    L.T("Подбор стратегии", "Find a strategy"), MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
             FlowTest.RestoreLeftoverIpset(z);   // прошлый тест DPI прервался — вернуть IPSet
             var targets = FlowTest.LoadTargets(z);
             var setup = new PickSetupW(this, strategies, targets.Count, FlowTest.TargetsFromFile(z), preselect, QuickList(), () => EditTargets());
             setup.ShowDialog();
             if (setup.Mode == null) return;
-            RunPick(setup.Selected, setup.Mode, FlowTest.LoadTargets(z), false);
+            // без curl.exe режим DPI невозможен — тогда обычный (упрощённый)
+            RunPick(setup.Selected, setup.Mode == "dpi" && !FlowTest.CurlAvailable ? "std" : setup.Mode, FlowTest.LoadTargets(z), false);
         }
 
         // unattended — подбор по расписанию: без окон, лучшая применяется сама, если она лучше текущей.

@@ -1,5 +1,7 @@
-# Сборка ZapretGUI на GitHub: при каждом push и pull request — проверка, что программа собирается и проходят автотесты.
-# При новом теге vX.Y.Z — сборка и загрузка ZapretGUI.exe и .sha256 в релиз, если в нём ещё нет файлов.
+# ZapretGUI build on GitHub: on every push and pull request the app is built and the autotests run.
+# On a new tag vX.Y.Z: build, then create the release with notes from CHANGELOG.md (section "## X.Y.Z"),
+# or, if the release already exists without files, upload ZapretGUI.exe and .sha256 to it.
+# Keep the scripts ASCII-only: Windows PowerShell on the runner misreads non-ASCII text.
 name: build
 
 on:
@@ -18,11 +20,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Сборка
+      - name: Build
         shell: powershell
         run: powershell -ExecutionPolicy Bypass -File build.ps1
 
-      - name: Автотесты
+      - name: Tests
         shell: powershell
         run: powershell -ExecutionPolicy Bypass -File tests\run-tests.ps1
 
@@ -33,18 +35,30 @@ jobs:
             ZapretGUI.exe
             ZapretGUI.exe.sha256
 
-      - name: Файлы в релиз (только если их там ещё нет)
+      - name: Release files
         if: startsWith(github.ref, 'refs/tags/v')
         shell: powershell
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           $tag = "${{ github.ref_name }}"
-          gh release view $tag --repo ${{ github.repository }} 2>$null | Out-Null
+          $ver = $tag.TrimStart('v')
+          $repo = "${{ github.repository }}"
+          gh release view $tag --repo $repo 2>$null | Out-Null
           if ($LASTEXITCODE -ne 0) {
-            gh release create $tag ZapretGUI.exe ZapretGUI.exe.sha256 --repo ${{ github.repository }} --title "ZapretGUI $($tag.TrimStart('v'))" --generate-notes
+            # notes = the CHANGELOG.md section of this version
+            $text = [IO.File]::ReadAllText("CHANGELOG.md", [Text.Encoding]::UTF8).Replace("`r", "")
+            $start = $text.IndexOf("`n## $ver")
+            $notes = "See CHANGELOG.md"
+            if ($start -ge 0) {
+              $start = $text.IndexOf("`n", $start + 1) + 1
+              $end = $text.IndexOf("`n## ", $start)
+              $notes = if ($end -lt 0) { $text.Substring($start) } else { $text.Substring($start, $end - $start) }
+            }
+            [IO.File]::WriteAllText("notes.md", $notes.Trim(), (New-Object Text.UTF8Encoding $false))
+            gh release create $tag ZapretGUI.exe ZapretGUI.exe.sha256 --repo $repo --title "ZapretGUI $ver" --notes-file notes.md
           } else {
-            $assets = gh release view $tag --repo ${{ github.repository }} --json assets -q ".assets | length"
-            if ([int]$assets -eq 0) { gh release upload $tag ZapretGUI.exe ZapretGUI.exe.sha256 --repo ${{ github.repository }} }
+            $assets = gh release view $tag --repo $repo --json assets -q ".assets | length"
+            if ([int]$assets -eq 0) { gh release upload $tag ZapretGUI.exe ZapretGUI.exe.sha256 --repo $repo }
             else { "Release $tag already has files - leaving them as is" }
           }

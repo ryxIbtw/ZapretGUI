@@ -155,7 +155,13 @@ namespace ZapretGui
                 var t = targets[i];
                 var tokens = new List<string>();
                 int lOk = 0, lErr = 0, lUnsup = 0;
-                if (t.Url != null)
+                bool noCurl = !CurlAvailable;   // на старых Windows 10 curl.exe нет — тогда одна проверка HTTPS средствами .NET
+                if (t.Url != null && noCurl && !cancelled())
+                {
+                    long ms = NetCheck.ProbeMs(t.Url, StdTimeout * 1000);
+                    if (ms >= 0) { tokens.Add("HTTPS:OK   "); lOk++; } else { tokens.Add("HTTPS:ERROR"); lErr++; }
+                }
+                if (t.Url != null && !noCurl)
                     foreach (var test in Tests)
                     {
                         if (cancelled()) break;
@@ -185,7 +191,7 @@ namespace ZapretGui
                 lock (sync)
                 {
                     ok += lOk; err += lErr; unsup += lUnsup;
-                    if (t.Url != null) total += Tests.Length;
+                    if (t.Url != null) total += noCurl ? 1 : Tests.Length;
                     // как у Flowseal: всё, что не «Timeout» и не «n/a», — пинг прошёл; «n/a» тоже считается неудачей
                     if (ping != "Timeout" && ping != "n/a") pingOk++; else pingFail++;
                 }

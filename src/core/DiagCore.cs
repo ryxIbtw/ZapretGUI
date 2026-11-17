@@ -149,10 +149,120 @@ namespace ZapretGui
             }
             else list.Add(Ok(L.T("Других программ обхода нет", "No other bypass services")));
 
-            var dns = DnsCheck();
-            if (dns != null) list.Add(dns);
+            foreach (var check in new Func<DiagItem>[] { DnsCheck, ClockCheck, Ipv6Check, QuicCheck })
+            {
+                DiagItem it = null;
+                try { it = check(); } catch { }
+                if (it != null) list.Add(it);
+            }
 
             return list.OrderByDescending(i => i.Level).ToList();
+        }
+
+        // Часы компьютера: если они сильно ошибаются, HTTPS-сайты не открываются (сертификат «ещё не действует» или «истёк»).
+        public static DiagItem ClockCheck()
+        {
+            DateTime? server = null;
+            foreach (string url in new[] { "http://www.msftconnecttest.com/connecttest.txt", "https://www.google.com/generate_204" })
+            {
+                try
+                {
+                    var req = (System.Net.HttpWebRequest)System.Net.WebRequest.Create(url);
+                    req.Method = "HEAD"; req.Timeout = 5000; req.Proxy = null; req.AllowAutoRedirect = false; req.UserAgent = "ZapretGUI";
+                    using (var resp = (System.Net.HttpWebResponse)req.GetResponse())
+                    {
+                        string d = resp.Headers["Date"];
+                        DateTime t;
+                        if (d != null && DateTime.TryParse(d, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AdjustToUniversal | System.Globalization.DateTimeStyles.AssumeUniversal, out t)) { server = t; break; }
+                    }
+                }
+                catch { }
+            }
+            if (server == null) return null;   // не удалось узнать точное время — пропускаем
+            double diff = (DateTime.UtcNow - server.Value).TotalMinutes;
+            if (Math.Abs(diff) < 5) return Ok(L.T("Часы компьютера точные", "The PC clock is accurate"));
+            var it = Bad(L.T("Часы компьютера ", "The PC clock is ") + (diff > 0 ? L.T("спешат", "ahead") : L.T("отстают", "behind")) + L.T(" на ", " by ") + FormatSpan(Math.Abs(diff)),
+                L.T("Из-за этого HTTPS-сайты могут не открываться. Включите «Устанавливать время автоматически».", "HTTPS sites may fail because of it. Turn on “Set time automatically”."));
+            it.FixText = L.T("Настройки времени", "Time settings");
+            it.Fix = () => Process.Start(new ProcessStartInfo("ms-settings:dateandtime") { UseShellExecute = true });   // только открыть окно Windows — сами ничего не меняем
+            return it;
+        }
+
+        static string FormatSpan(double minutes)
+        {
+            if (minutes < 120) return Math.Round(minutes) + L.T(" мин", " min");
+            if (minutes < 60 * 48) return Math.Round(minutes / 60) + L.T(" ч", " h");
+            return Math.Round(minutes / 1440) + L.T(" дн.", " days");
+        }
+
+        // IPv6: если он есть, но не работает, сайты открываются с долгой задержкой.
+        public static DiagItem Ipv6Check()
+        {
+            bool has = false;
+            foreach (var ni in System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces())
+            {
+                if (ni.OperationalStatus != System.Net.NetworkInformation.OperationalStatus.Up) continue;
+                foreach (var a in ni.GetIPProperties().UnicastAddresses)
+                {
+                    var ip = a.Address;
+                    if (ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6 && !ip.IsIPv6LinkLocal && !ip.IsIPv6SiteLocal && !System.Net.IPAddress.IsLoopback(ip) &&
+                        !ip.ToString().StartsWith("fd", StringComparison.OrdinalIgnoreCase) && !ip.ToString().StartsWith("fc", StringComparison.OrdinalIgnoreCase)) has = true;
+                }
+            }
+            if (!has) return Ok(L.T("IPv6 не используется", "IPv6 is not used"));
+            System.Net.IPAddress target = null;
+            try { target = System.Net.Dns.GetHostAddresses("www.google.com").FirstOrDefault(a => a.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6); } catch { }
+            if (target == null) return Ok(L.T("IPv6 есть, DNS отвечает только IPv4", "IPv6 present, DNS answers IPv4 only"));
+            bool works = false;
+            try
+            {
+                using (var c = new System.Net.Sockets.TcpClient(System.Net.Sockets.AddressFamily.InterNetworkV6))
+                    works = c.ConnectAsync(target, 443).Wait(3000) && c.Connected;
+            }
+            catch { }
+            return works ? Ok(L.T("IPv6 работает", "IPv6 works"))
+                         : Warn(L.T("IPv6 есть, но не работает", "IPv6 is present but doesn't work"),
+                                L.T("Сайты могут открываться с задержкой. Если это мешает, отключите IPv6 в свойствах сетевого подключения.", "Sites may open slowly. If it bothers you, turn IPv6 off in the network connection properties."));
+        }
+
+        // QUIC (UDP 443) — по нему YouTube отдаёт видео. Отправляем пакет с выдуманной версией QUIC:
+        // по правилам протокола сервер обязан ответить списком версий. Ответа нет — UDP до YouTube не проходит.
+        public static DiagItem QuicCheck() { return QuicCheck("www.youtube.com"); }
+
+        public static DiagItem QuicCheck(string host)
+        {
+            bool ok = QuicProbe(host, 3000) >= 0;
+            return ok ? Ok(L.T("QUIC (UDP) до YouTube проходит", "QUIC (UDP) to YouTube works"))
+                      : Warn(L.T("QUIC (UDP) до YouTube не проходит", "QUIC (UDP) to YouTube is blocked"),
+                             L.T("Видео всё равно пойдёт по TCP, но может грузиться медленнее. Помогает другая стратегия.", "Video still goes over TCP but may load slower. Another strategy may help."));
+        }
+
+        // Время ответа в мс или -1.
+        public static long QuicProbe(string host, int timeout)
+        {
+            try
+            {
+                var ip = System.Net.Dns.GetHostAddresses(host).FirstOrDefault(a => a.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork);
+                if (ip == null) return -1;
+                var rnd = new Random();
+                var pkt = new byte[1200];   // Initial-пакеты QUIC должны быть не короче 1200 байт
+                pkt[0] = 0xC0;              // длинный заголовок
+                pkt[1] = 0x1A; pkt[2] = 0x2A; pkt[3] = 0x3A; pkt[4] = 0x4A;   // версия, которой нет — сервер отвечает Version Negotiation
+                pkt[5] = 8; var dcid = new byte[8]; rnd.NextBytes(dcid); Array.Copy(dcid, 0, pkt, 6, 8);
+                pkt[14] = 8; var scid = new byte[8]; rnd.NextBytes(scid); Array.Copy(scid, 0, pkt, 15, 8);
+                using (var udp = new System.Net.Sockets.UdpClient(System.Net.Sockets.AddressFamily.InterNetwork))
+                {
+                    udp.Client.ReceiveTimeout = timeout;
+                    var sw = Stopwatch.StartNew();
+                    udp.Send(pkt, pkt.Length, new System.Net.IPEndPoint(ip, 443));
+                    var from = new System.Net.IPEndPoint(System.Net.IPAddress.Any, 0);
+                    var resp = udp.Receive(ref from);
+                    // Version Negotiation: длинный заголовок и версия 0
+                    if (resp.Length >= 7 && (resp[0] & 0x80) != 0 && resp[1] == 0 && resp[2] == 0 && resp[3] == 0 && resp[4] == 0) return sw.ElapsedMilliseconds;
+                    return -1;
+                }
+            }
+            catch { return -1; }
         }
 
         // Подменяет ли DNS провайдера адреса YouTube: сравнить ответ системного DNS с ответом Cloudflare (DNS через HTTPS).
@@ -174,7 +284,11 @@ namespace ZapretGui
                 req.Accept = "application/dns-json"; req.Timeout = 5000; req.Proxy = null; req.UserAgent = "ZapretGUI";
                 using (var resp = req.GetResponse())
                 using (var rd = new StreamReader(resp.GetResponseStream()))
-                    foreach (Match m in Regex.Matches(rd.ReadToEnd(), "\"data\"\\s*:\\s*\"(\\d+\\.\\d+\\.\\d+\\.\\d+)\"")) doh.Add(m.Groups[1].Value);
+                    foreach (var a in Json.Arr(Json.Obj(rd.ReadToEnd()), "Answer"))
+                    {
+                        string ip = Json.Str(a, "data");
+                        if (ip != null && Regex.IsMatch(ip, "^\\d+\\.\\d+\\.\\d+\\.\\d+$")) doh.Add(ip);
+                    }
             }
             catch { }
             // у YouTube адреса Google: при любом честном DNS они из диапазонов Google

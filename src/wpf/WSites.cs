@@ -9,6 +9,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Threading;
+using WF = System.Windows.Forms;
 
 namespace ZapretGui
 {
@@ -80,6 +81,49 @@ namespace ZapretGui
                 if (left > 0) t.Join(left);
             }
             servicesChecked = true;
+        }
+
+        string ServicesExtra()
+        {
+            var parts = new List<string>();
+            foreach (var s in Services)
+            {
+                long ms;
+                bool known;
+                lock (serviceMs) known = serviceMs.TryGetValue(s.Url, out ms);
+                if (known) parts.Add(s.Name.Replace(",", " ").Replace("=", " ") + "=" + ms);
+            }
+            return string.Join(",", parts);
+        }
+
+        // Уведомление, если свой сервис не открывается две проверки подряд (и когда снова открылся).
+        readonly Dictionary<string, int> serviceBad = new Dictionary<string, int>();
+        void CheckServiceAlerts(bool net)
+        {
+            if (!running || !net || !NotifyOn) { serviceBad.Clear(); return; }
+            foreach (var s in Services)
+            {
+                long ms;
+                bool known;
+                lock (serviceMs) known = serviceMs.TryGetValue(s.Url, out ms);
+                if (!known) continue;
+                int n;
+                serviceBad.TryGetValue(s.Url, out n);
+                if (ms >= 0)
+                {
+                    if (n >= 2) Balloon(s.Name + L.T(" снова открывается", " opens again"), s.Url, WF.ToolTipIcon.Info);
+                    serviceBad[s.Url] = 0;
+                }
+                else
+                {
+                    serviceBad[s.Url] = n + 1;
+                    if (n + 1 == 2)
+                    {
+                        Journal.Add(L.T("Свой сервис не открывается: ", "Own service doesn't open: ") + s.Name + " (" + s.Url + ")");
+                        Balloon(s.Name + L.T(" не открывается", " doesn't open"), L.T("Попробуйте другую стратегию или добавьте сайт в «Мои домены»", "Try another strategy or add the site to My domains"), WF.ToolTipIcon.Warning);
+                    }
+                }
+            }
         }
 
         void UpdateServiceCards()

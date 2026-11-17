@@ -238,6 +238,7 @@ namespace ZapretGui
                 else if (strat == "general (ALT)" && h >= 19 && h < 22 && rnd.Next(4) > 0) { r.Yt = rnd.Next(3) == 0 ? 1 : 0; r.YtMs = r.Yt > 0 ? 300 : -1; }
                 else if (rnd.Next(400) == 0) r.Dc = 2;
                 if (day == 0 && h == 12 && t.Minute < 8) { r.Net = false; r.Yt = 0; r.Dc = 0; r.YtMs = r.DcMs = -1; }
+                if (on) r.Extra = "Twitch=" + (rnd.Next(25) == 0 ? -1 : 140 + rnd.Next(60));
                 list.Add(r);
             }
             return list;

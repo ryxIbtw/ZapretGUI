@@ -226,8 +226,99 @@ namespace ZapretGui
         }
     }
 
+    // Карта «день недели × час»: чем краснее клетка, тем чаще в это время перебои.
+    class WeekHeat : FrameworkElement
+    {
+        double[,] data = new double[7, 24];
+        readonly ToolTip tip = new ToolTip();
+        const double LabelW = 26;
+        public WeekHeat()
+        {
+            Height = 7 * 15 + 16;
+            tip.PlacementTarget = this; tip.Placement = PlacementMode.Relative;
+            MouseMove += (s, e) =>
+            {
+                var p = e.GetPosition(this);
+                double cw = (ActualWidth - LabelW) / 24;
+                int h = (int)((p.X - LabelW) / cw), d = (int)(p.Y / 15);
+                if (h < 0 || h > 23 || d < 0 || d > 6) { tip.IsOpen = false; return; }
+                double v = data[d, h];
+                tip.Content = Day(d, true) + ", " + h.ToString("00") + ":00–" + ((h + 1) % 24).ToString("00") + ":00  ·  " +
+                    (v < 0 ? L.T("нет данных", "no data") : L.T("перебои ", "problems ") + Math.Round(v * 100) + L.T("% времени", "% of the time"));
+                tip.HorizontalOffset = p.X + 12; tip.VerticalOffset = p.Y + 14; tip.IsOpen = true;
+            };
+            MouseLeave += delegate { tip.IsOpen = false; };
+        }
+        static string Day(int d, bool full)
+        {
+            string[] ru = full ? new[] { "Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье" } : new[] { "Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс" };
+            string[] en = full ? new[] { "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday" } : new[] { "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun" };
+            return L.En ? en[d] : ru[d];
+        }
+        public void Set(double[,] d) { data = d; InvalidateVisual(); }
+        protected override void OnRender(DrawingContext dc)
+        {
+            double w = ActualWidth;
+            dc.DrawRectangle(Brushes.Transparent, null, new Rect(0, 0, w, ActualHeight));
+            double cw = (w - LabelW) / 24;
+            for (int d = 0; d < 7; d++)
+            {
+                dc.DrawText(StatBar.Text(Day(d, false), W.Dim), new Point(0, d * 15 + 1));
+                for (int h = 0; h < 24; h++)
+                {
+                    double v = data[d, h];
+                    Brush b = v < 0 ? (Brush)W.Bg : v == 0 ? W.AccentLine : new SolidColorBrush(W.Mix(W.Warn.Color, W.Danger.Color, Math.Min(1, v * 3)));
+                    dc.DrawRoundedRectangle(b, null, new Rect(LabelW + h * cw + 1, d * 15 + 1, Math.Max(1, cw - 2), 13), 2.5, 2.5);
+                }
+            }
+            for (int h = 0; h < 24; h += 3) dc.DrawText(StatBar.Text(h.ToString("00"), W.Dim), new Point(LabelW + h * cw + 1, 7 * 15 + 1));
+        }
+    }
+
+    // Сравнение стратегий: линия на каждую стратегию — процент времени без перебоев по дням.
+    class StrategyLines : FrameworkElement
+    {
+        Dictionary<string, double[]> data = new Dictionary<string, double[]>();
+        public static readonly Color[] Palette = { Color.FromRgb(52, 211, 153), Color.FromRgb(96, 165, 250), Color.FromRgb(251, 146, 60), Color.FromRgb(244, 114, 182), Color.FromRgb(167, 139, 250) };
+        public StrategyLines() { Height = 110; }
+        public void Set(Dictionary<string, double[]> d) { data = d; InvalidateVisual(); }
+        protected override void OnRender(DrawingContext dc)
+        {
+            double w = ActualWidth - 34, h = ActualHeight - 4;
+            dc.DrawRectangle(Brushes.Transparent, null, new Rect(0, 0, ActualWidth, ActualHeight));
+            var grid = new Pen(W.Line, 1);
+            foreach (int pct in new[] { 100, 50 })
+            {
+                double y = 2 + h * (1 - pct / 100.0);
+                dc.DrawLine(grid, new Point(0, y), new Point(w, y));
+                dc.DrawText(StatBar.Text(pct + "%", W.Dim), new Point(w + 4, y - 7));
+            }
+            int n = 0;
+            foreach (var kv in data.Take(Palette.Length))
+            {
+                var pen = new Pen(new SolidColorBrush(Palette[n++]), 2) { LineJoin = PenLineJoin.Round };
+                double step = kv.Value.Length > 1 ? w / (kv.Value.Length - 1) : w;
+                Point? prev = null;
+                for (int i = 0; i < kv.Value.Length; i++)
+                {
+                    double v = kv.Value[i];
+                    if (v < 0) { prev = null; continue; }
+                    var p = new Point(i * step, 2 + h * (1 - v / 100.0));
+                    if (prev != null) dc.DrawLine(pen, prev.Value, p);
+                    dc.DrawEllipse(pen.Brush, null, p, 2.2, 2.2);
+                    prev = p;
+                }
+            }
+        }
+    }
+
     class StatsW : WinBase
     {
+        readonly WeekHeat heat = new WeekHeat();
+        readonly StrategyLines lines = new StrategyLines();
+        readonly WrapPanel linesLegend = new WrapPanel { Margin = new Thickness(0, 6, 0, 0) };
+        readonly TextBlock ownLine;
+        Border linesCard;
         readonly PingChart ping = new PingChart();
         readonly HourBars hours = new HourBars();
         readonly StackPanel outList = new StackPanel();
@@ -324,6 +415,8 @@ namespace ZapretGui
             sp.Children.Add(tiles);
             weekCmp = W.T("", W.Small, W.Muted); weekCmp.Margin = new Thickness(2, 8, 0, 0); weekCmp.TextWrapping = TextWrapping.Wrap;
             sp.Children.Add(weekCmp);
+            ownLine = W.T("", W.Small, W.Muted); ownLine.Margin = new Thickness(2, 4, 0, 0); ownLine.TextWrapping = TextWrapping.Wrap;
+            sp.Children.Add(ownLine);
 
             // пинг, сбои по часам, список сбоев
             Func<string, FrameworkElement, TextBlock, Border> section = (title, content, note) =>
@@ -343,6 +436,12 @@ namespace ZapretGui
             extra.Children.Add(section(L.T("Пинг", "Ping"), ping, pingNote));
             var hn = W.T(L.T("наведите на столбик", "hover a bar"), W.Small, W.Dim);
             extra.Children.Add(section(L.T("Перебои по часам суток", "Problems by hour of day"), hours, hn));
+            extra.Children.Add(section(L.T("Когда обычно ломается: день недели × час", "When it usually breaks: weekday × hour"), heat, W.T(L.T("наведите на клетку", "hover a cell"), W.Small, W.Dim)));
+            var linesBox = new StackPanel();
+            linesBox.Children.Add(lines);
+            linesBox.Children.Add(linesLegend);
+            linesCard = section(L.T("Сравнение стратегий по дням", "Strategies compared by day"), linesBox, W.T(L.T("% времени без перебоев", "% of time without problems"), W.Small, W.Dim));
+            extra.Children.Add(linesCard);
             extra.Children.Add(section(L.T("Последние сбои", "Recent outages"), outList, null));
             sp.Children.Add(extra);
 
@@ -409,9 +508,16 @@ namespace ZapretGui
             sp.Children.Add(foot);
 
             // длинное окно — с прокруткой
-            Root.Child = new ScrollViewer { Content = sp, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-                MaxHeight = SystemParameters.WorkArea.Height * 0.88 / Math.Max(0.75, Theme.UiScale) };
-            repaint = () => { barYt.InvalidateVisual(); barDc.InvalidateVisual(); barStrat.InvalidateVisual(); axis.InvalidateVisual(); ping.InvalidateVisual(); hours.InvalidateVisual(); };
+            // окно можно растягивать: полосы и графики подстраиваются под ширину, остальное прокручивается
+            sp.Width = double.NaN; sp.MinWidth = 600;
+            Root.Child = new ScrollViewer { Content = sp, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
+            ResizeMode = ResizeMode.CanResize;
+            SizeToContent = SizeToContent.Manual;
+            double k = Math.Max(0.75, Theme.UiScale);
+            MinWidth = 660 * k; MinHeight = 420 * k;
+            Width = 680 * k;
+            Height = Math.Min(1100 * k, SystemParameters.WorkArea.Height * 0.9);
+            repaint = () => { barYt.InvalidateVisual(); barDc.InvalidateVisual(); barStrat.InvalidateVisual(); axis.InvalidateVisual(); ping.InvalidateVisual(); hours.InvalidateVisual(); heat.InvalidateVisual(); lines.InvalidateVisual(); };
             W.Changed += repaint;
             Closed += delegate { W.Changed -= repaint; };
             Select(0);
@@ -466,7 +572,30 @@ namespace ZapretGui
             var all = recs.Where(r => r.On && r.Net).SelectMany(r => new[] { r.YtMs, r.DcMs }).Where(m => m >= 0).ToList();
             pingNote.Text = all.Count == 0 ? "" : L.T("в среднем ", "average ") + (int)all.Average() + L.T(" мс", " ms");
             hours.Set(Stats.FailByHour(recs, from, to));
+            heat.Set(Stats.FailByWeekdayHour(recs, from, to));
             FillOutages(recs, from, to);
+
+            // сравнение стратегий: имеет смысл за неделю и дольше, если стратегий было хотя бы две
+            int days = (int)Math.Round((to - from).TotalDays);
+            var per = range == 0 ? new Dictionary<string, double[]>() : Stats.UpByDayPerStrategy(recs, from, days);
+            var top = per.OrderByDescending(kv => kv.Value.Count(v => v >= 0)).Take(StrategyLines.Palette.Length).ToDictionary(kv => kv.Key, kv => kv.Value);
+            linesCard.Visibility = top.Count >= 2 ? Visibility.Visible : Visibility.Collapsed;
+            lines.Set(top);
+            linesLegend.Children.Clear();
+            int ci = 0;
+            foreach (var kv in top)
+            {
+                var it = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 14, 2) };
+                it.Children.Add(new Border { Width = 10, Height = 3, Background = new SolidColorBrush(StrategyLines.Palette[ci++]), VerticalAlignment = VerticalAlignment.Center });
+                var t = W.T(kv.Key, W.Caption, W.Muted); t.Margin = new Thickness(5, 0, 0, 0);
+                it.Children.Add(t);
+                linesLegend.Children.Add(it);
+            }
+
+            // свои сервисы
+            var own = Stats.ServiceNames(recs);
+            ownLine.Text = own.Count == 0 ? "" : L.T("Свои сервисы: ", "Own services: ") + string.Join(",  ", own.Select(nm => { double p = Stats.ServiceUpPct(recs, nm, from, to); return nm + " " + (p < 0 ? "—" : Pct(p)); }));
+            ownLine.Visibility = own.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
 
             // сравнение с прошлой неделей
             weekCmp.Text = "";

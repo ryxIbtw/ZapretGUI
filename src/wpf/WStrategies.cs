@@ -119,7 +119,7 @@ namespace ZapretGui
             strategies = z.Strategies();
             var list = QuickList();
             if (list.Count < 2) list = strategies.Take(8).ToList();
-            if (list.Count == 0 || !FlowTest.CurlAvailable) return;
+            if (list.Count == 0) return;
             if (!list.Contains(selected) && strategies.Contains(selected)) list.Insert(0, selected);   // текущая — для сравнения
             Journal.Add(L.T("Подбор по расписанию: ", "Scheduled test: ") + string.Join(", ", list));
             RunPick(list, "std", FlowTest.LoadTargets(z), true);
