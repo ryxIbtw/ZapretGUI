@@ -5,6 +5,8 @@
 Минималистичный интерфейс для [zapret-discord-youtube](https://github.com/Flowseal/zapret-discord-youtube) от **Flowseal**.
 GUI by **ryxIbtw**.
 
+**Сайт:** [ryxibtw.github.io/ZapretGUI](https://ryxibtw.github.io/ZapretGUI/) · **Скачать:** [ZapretGUI.exe](https://github.com/ryxIbtw/ZapretGUI/releases/latest/download/ZapretGUI.exe) · [Обсуждения](https://github.com/ryxIbtw/ZapretGUI/discussions)
+
 [English below](#english)
 
 ## Установка
