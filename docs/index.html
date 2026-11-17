@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Zapret GUI — обход блокировок YouTube и Discord одной кнопкой</title>
+<meta name="description" content="Простой интерфейс для zapret-discord-youtube от Flowseal: включение одной кнопкой, подбор стратегии, статистика и уведомления о сбоях.">
+<meta property="og:title" content="Zapret GUI">
+<meta property="og:description" content="Обход блокировок YouTube и Discord одной кнопкой. Интерфейс для zapret-discord-youtube от Flowseal.">
+<meta property="og:image" content="banner.png">
+<style>
+  :root {
+    --bg: #111214; --surface: #1b1c20; --line: #2c2d33; --text: #ececee; --muted: #8b8c94; --accent: #34d399; --accent-deep: #10291f;
+  }
+  @media (prefers-color-scheme: light) {
+    :root { --bg: #f3f4f6; --surface: #ffffff; --line: #e4e6ea; --text: #17181c; --muted: #6b6f78; --accent: #059669; --accent-deep: #d9f7ea; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.6 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif; }
+  a { color: var(--accent); }
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 0 20px; }
+  header { padding: 18px 0; display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+  header .brand { font-weight: 600; font-size: 20px; }
+  header nav a { color: var(--muted); text-decoration: none; margin-left: 18px; font-size: 15px; }
+  header nav a:hover { color: var(--text); }
+  .hero { padding: 40px 0 24px; text-align: center; }
+  .hero h1 { font-size: clamp(30px, 5vw, 48px); line-height: 1.15; margin: 0 0 14px; }
+  .hero p { color: var(--muted); font-size: 18px; max-width: 640px; margin: 0 auto 26px; }
+  .btn { display: inline-block; background: var(--accent); color: #0b1a14; font-weight: 600; padding: 13px 26px; border-radius: 999px; text-decoration: none; }
+  .btn.ghost { background: transparent; color: var(--text); border: 1px solid var(--line); margin-left: 10px; }
+  .hero small { display: block; color: var(--muted); margin-top: 14px; font-size: 13px; }
+  .shot { margin: 34px auto 0; max-width: 100%; border-radius: 16px; border: 1px solid var(--line); display: block; }
+  h2 { font-size: 26px; margin: 56px 0 18px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; }
+  .card h3 { margin: 0 0 6px; font-size: 17px; }
+  .card p { margin: 0; color: var(--muted); font-size: 15px; }
+  ol.steps { padding-left: 22px; }
+  ol.steps li { margin-bottom: 8px; }
+  code { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 1px 6px; font-size: 14px; }
+  details { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px 16px; margin-bottom: 8px; }
+  details summary { cursor: pointer; font-weight: 600; }
+  details p { color: var(--muted); margin: 8px 0 0; }
+  footer { color: var(--muted); font-size: 14px; padding: 40px 0 50px; border-top: 1px solid var(--line); margin-top: 60px; }
+  @media (max-width: 560px) {
+    header nav { display: none; }
+    .btn.ghost { margin: 10px 0 0; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="brand">Zapret GUI</div>
+    <nav>
+      <a href="#features">Возможности</a>
+      <a href="#install">Установка</a>
+      <a href="#faq">Вопросы</a>
+      <a href="https://github.com/ryxIbtw/ZapretGUI">GitHub</a>
+    </nav>
+  </header>
+
+  <section class="hero">
+    <h1>YouTube и Discord<br>одной кнопкой</h1>
+    <p>Простой интерфейс для <a href="https://github.com/Flowseal/zapret-discord-youtube">zapret-discord-youtube</a> от Flowseal. Подбирает стратегию, следит, чтобы всё открывалось, и сам скажет, если что-то сломалось.</p>
+    <a class="btn" href="https://github.com/ryxIbtw/ZapretGUI/releases/latest/download/ZapretGUI.exe">Скачать ZapretGUI.exe</a>
+    <a class="btn ghost" href="https://github.com/ryxIbtw/ZapretGUI/releases/latest">Все версии</a>
+    <small>Windows 10 и 11 · один файл без установки · бесплатно, открытый код (MIT)</small>
+    <img class="shot" src="screenshots.png" alt="Главный экран Zapret GUI в тёмной и светлой теме" loading="lazy">
+  </section>
+
+  <section id="features">
+    <h2>Что умеет</h2>
+    <div class="grid">
+      <div class="card"><h3>Одна кнопка</h3><p>Включает и выключает обход. Рядом обычными словами: «Обход работает» или «YouTube не открывается» и что делать.</p></div>
+      <div class="card"><h3>Подбор стратегии</h3><p>Проверяет стратегии, как «Run Tests» у Flowseal, и показывает лучшую. Есть быстрый подбор и подбор по расписанию.</p></div>
+      <div class="card"><h3>Следит сам</h3><p>Раз в минуту проверяет YouTube и Discord. Если перестали открываться — уведомление из трея, по желанию сам пробует другие стратегии.</p></div>
+      <div class="card"><h3>Статистика</h3><p>Когда работало, а когда нет, на какой стратегии, в какие часы чаще ломается. Сравнение стратегий по дням.</p></div>
+      <div class="card"><h3>Свои сайты</h3><p>«Проверить сайт» и добавить его в обход одной кнопкой. Свои плашки сервисов на главном экране.</p></div>
+      <div class="card"><h3>Диагностика</h3><p>Находит, что мешает: VPN, прокси, AdGuard, неверные часы, подмену DNS, блокировку QUIC — и подсказывает, как исправить.</p></div>
+      <div class="card"><h3>Удобно</h3><p>Трей с мини-панелью, горячая клавиша, профили, пауза, обход вместе с играми, простой режим для родителей.</p></div>
+      <div class="card"><h3>Обновляется сам</h3><p>И программа, и zapret — с проверкой контрольной суммы. Можно вернуть прошлую версию.</p></div>
+    </div>
+    <img class="shot" src="screenshots-2.png" alt="Простой режим и окно статистики" loading="lazy">
+  </section>
+
+  <section id="install">
+    <h2>Установка</h2>
+    <ol class="steps">
+      <li>Скачайте <a href="https://github.com/ryxIbtw/ZapretGUI/releases/latest/download/ZapretGUI.exe">ZapretGUI.exe</a>.</li>
+      <li>Положите его в папку <a href="https://github.com/Flowseal/zapret-discord-youtube/releases/latest">zapret-discord-youtube</a>, рядом с <code>service.bat</code>. Если zapret ещё нет — программа предложит скачать его сама.</li>
+      <li>Запустите. Windows попросит права администратора — они нужны драйверу WinDivert.</li>
+      <li>Нажмите «Подобрать стратегию», а потом большую кнопку.</li>
+    </ol>
+    <p>Проверить файл: <code>Get-FileHash ZapretGUI.exe</code> в PowerShell — сумма должна совпасть с <code>ZapretGUI.exe.sha256</code> из релиза.</p>
+  </section>
+
+  <section id="faq">
+    <h2>Частые вопросы</h2>
+    <details><summary>Обход включён, но YouTube не открывается</summary><p>Нажмите «Подобрать стратегию». Если не помогло — откройте «Диагностику»: часто мешают VPN, прокси или другая программа обхода.</p></details>
+    <details><summary>Антивирус ругается на winws.exe или WinDivert</summary><p>Это частая ложная тревога: драйвер WinDivert перехватывает трафик, как и вирусы. Добавьте папку zapret в исключения антивируса.</p></details>
+    <details><summary>Программа что-то отправляет обо мне?</summary><p>Нет. Она только запускает zapret от Flowseal и проверяет, открываются ли сайты. Код открыт на GitHub.</p></details>
+    <details><summary>Как удалить?</summary><p>Настройки → «Обслуживание» → «Удалить всё»: служба, задачи и настройки удалятся. Папку zapret можно удалить вручную.</p></details>
+    <p>Остались вопросы — <a href="https://github.com/ryxIbtw/ZapretGUI/discussions">обсуждения на GitHub</a>.</p>
+  </section>
+
+  <footer>
+    Zapret GUI by <a href="https://github.com/ryxIbtw">ryxIbtw</a> · неофициальный интерфейс для <a href="https://github.com/Flowseal/zapret-discord-youtube">zapret-discord-youtube</a> by Flowseal ·
+    <a href="https://github.com/ryxIbtw/ZapretGUI/blob/main/LICENSE">MIT</a> · <a href="https://github.com/ryxIbtw/ZapretGUI/blob/main/CHANGELOG.md">список изменений</a>
+  </footer>
+</div>
+</body>
+</html>

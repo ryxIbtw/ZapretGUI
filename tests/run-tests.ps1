@@ -118,6 +118,43 @@ if ((Split-Path $iniPath) -eq (Split-Path $Exe) -and -not (Test-Path $iniPath)) 
     Remove-Item $iniPath -Force
 } else { "  пропущено: тестовая сборка лежит не во временной папке" }
 
+# ---------- резервная копия: новые настройки (в переносном режиме — всё во временной папке) ----------
+"Резервная копия"
+if ((Split-Path $iniPath) -eq (Split-Path $Exe)) {
+    [IO.File]::WriteAllText($iniPath, "Favorites=general|general (ALT)`r`nNote:general=лучшая вечером`r`nTiles=auto,game`r`nStatsKeep=7`r`n", (New-Object Text.UTF8Encoding $false))
+    $P.GetField('ini', $BF).SetValue($null, $null)   # программа держит ini в памяти — перечитать после замены файла
+    $root = Join-Path $tmp 'zapret'; New-Item -ItemType Directory -Force (Join-Path $root 'lists'), (Join-Path $root 'bin'), (Join-Path $root 'utils') | Out-Null
+    [IO.File]::WriteAllText((Join-Path $root 'lists\list-general-user.txt'), "example.com`r`n")
+    $zz = [Activator]::CreateInstance((T 'Zapret'), @([string]$root))
+    $SB = T 'SettingsBackup'
+    $zip = [string](Join-Path $tmp 'backup.zip')
+    $SB.GetMethod('Export', $BF).Invoke($null, @($zz, $zip))
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $arc = [IO.Compression.ZipFile]::OpenRead($zip)
+    $man = (New-Object IO.StreamReader($arc.GetEntry('zapretgui-settings.txt').Open())).ReadToEnd(); $arc.Dispose()
+    Check 'в копии есть избранное, заметка и плитки' ($man -match 'pref\.Favorites=general' -and $man -match 'pref\.Note:general=лучшая вечером' -and $man -match 'pref\.Tiles=auto,game')
+    [IO.File]::WriteAllText($iniPath, "Lang=ru`r`n", (New-Object Text.UTF8Encoding $false))
+    $P.GetField('ini', $BF).SetValue($null, $null)
+    $SB.GetMethod('Import', $BF).Invoke($null, @($zz, $zip)) | Out-Null
+    Check 'после загрузки заметка и избранное вернулись' ($P.GetMethod('Get', $BF).Invoke($null, @('Note:general', '')) -eq 'лучшая вечером' -and $P.GetMethod('Get', $BF).Invoke($null, @('Favorites', '')) -eq 'general|general (ALT)')
+    Check 'журнал и статистика в переносном режиме — рядом с программой' ($P.GetProperty('DataDir', $BF).GetValue($null) -like "$tmp*")
+    Remove-Item $iniPath -Force
+    $P.GetField('ini', $BF).SetValue($null, $null)
+}
+
+# ---------- статистика: свои сервисы, карта, сравнение стратегий ----------
+"Статистика (новое)"
+foreach ($r in $recs) { $r.Extra = 'Twitch=' + $(if ($r.T.Minute -lt 6) { -1 } else { 120 }) }
+$sup = $S.GetMethod('ServiceUpPct', $BF).Invoke($null, @($recs, 'Twitch', $from, $to))
+Check ("свой сервис: ~90% (получилось {0:N1})" -f $sup) ($sup -gt 85 -and $sup -lt 95)
+$names = $S.GetMethod('ServiceNames', $BF).Invoke($null, @(,$recs))
+Check 'имена своих сервисов из записей' ($names.Count -eq 1 -and $names[0] -eq 'Twitch')
+$heat = $S.GetMethod('FailByWeekdayHour', $BF).Invoke($null, @($recs, $from, $to))
+$wd = ([int]$day.DayOfWeek + 6) % 7
+Check ("карта: перебои в {0}-й день в 10 часов (получилось {1:N2})" -f $wd, $heat[$wd, 10]) ($heat[$wd, 10] -gt 0.1 -and $heat[$wd, 3] -eq -1)
+$per = $S.GetMethod('UpByDayPerStrategy', $BF).Invoke($null, @($recs, $from, 1))
+Check ("сравнение стратегий: A ~83% в этот день (получилось {0:N1})" -f $per['A'][0]) ($per.ContainsKey('A') -and $per['A'][0] -gt 80 -and $per['A'][0] -lt 86)
+
 # ---------- DNS (только чтение) ----------
 $dns = (T 'Diag').GetMethod('DnsCheck', $BF).Invoke($null, @())
 Check "проверка DNS отвечает: $($dns.Title)" ($dns -ne $null -and $dns.Title -ne '')

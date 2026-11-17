@@ -175,6 +175,9 @@ namespace ZapretGui
                 target = new WhatsNewW(w, "1.10.4", "1.10.5", new System.Collections.Generic.List<string> { "general (ALT12)", "general (FAKE TLS AUTO ALT4)" },
                     new System.Collections.Generic.List<string> { "general (ALT3)" });
             else if (page == "strategies") target = new StrategiesW(w);
+            else if (page == "hotkey") target = new HotkeyW(w);
+            else if (page == "color") target = new ColorW(w, 0x34D399);
+            else if (page == "stratedit") target = new StrategyEditW(w, w.Zap, w.Zap.Strategies().FirstOrDefault() ?? "general");
             else if (page == "help") target = new HelpW(w);
             else if (page == "checksite") target = new CheckSiteW(w);
             else if (page == "targets") target = new TargetsW(w, w.Zap);
@@ -213,7 +216,7 @@ namespace ZapretGui
                     "Подбор стратегии", MessageBoxButton.YesNo, MessageBoxImage.Question);
                 return;
             }
-            var t = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(page == "diag" ? 4000 : 900) };
+            var t = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(page == "diag" ? 9000 : 900) };
             t.Tick += delegate { t.Stop(); Save(target, path); Application.Current.Shutdown(); };
             t.Start();
         }

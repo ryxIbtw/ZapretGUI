@@ -149,12 +149,11 @@ namespace ZapretGui
             }
             else list.Add(Ok(L.T("Других программ обхода нет", "No other bypass services")));
 
-            foreach (var check in new Func<DiagItem>[] { DnsCheck, ClockCheck, Ipv6Check, QuicCheck })
-            {
-                DiagItem it = null;
-                try { it = check(); } catch { }
-                if (it != null) list.Add(it);
-            }
+            // сетевые проверки — одновременно, чтобы диагностика не ждала каждую по очереди
+            var checks = new Func<DiagItem>[] { DnsCheck, ClockCheck, Ipv6Check, QuicCheck };
+            var tasks = checks.Select(c => System.Threading.Tasks.Task.Factory.StartNew(() => { try { return c(); } catch { return null; } })).ToArray();
+            System.Threading.Tasks.Task.WaitAll(tasks, 12000);
+            foreach (var t in tasks) if (t.IsCompleted && t.Result != null) list.Add(t.Result);
 
             return list.OrderByDescending(i => i.Level).ToList();
         }
