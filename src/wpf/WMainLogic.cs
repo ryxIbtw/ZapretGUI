@@ -162,6 +162,7 @@ namespace ZapretGui
                 case "dark": return L.T("Тёмная", "Dark");
                 case "amoled": return L.T("Чёрная (AMOLED)", "Black (AMOLED)");
                 case "warm": return L.T("Тёплая светлая", "Warm light");
+                case "contrast": return L.T("Высокий контраст", "High contrast");
                 default: return L.T("Как в Windows", "Like Windows");
             }
         }

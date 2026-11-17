@@ -586,7 +586,7 @@ namespace ZapretGui
     // ================= Журнал событий =================
     class JournalW : WinBase
     {
-        readonly TextBox box;
+        readonly ScrollViewer box;
         readonly TextBlock summary;
         readonly Action<string> onAdded;
 
@@ -606,9 +606,9 @@ namespace ZapretGui
             onlyErrors.Click += delegate { onlyErrors.On = !onlyErrors.On; Fill(); };
             Grid.SetColumn(onlyErrors, 1); filterRow.Children.Add(onlyErrors);
             sp.Children.Add(filterRow);
-            box = new TextBox { IsReadOnly = true, TextWrapping = TextWrapping.Wrap, AcceptsReturn = true, Height = 400, FontFamily = W.MonoFont, FontSize = 12,
-                VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
-            sp.Children.Add(box);
+            // строки журнала — с цветом: проблемы красным и жёлтым, включение обхода — цветом акцента
+            box = new ScrollViewer { Height = 400, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, Content = rows };
+            sp.Children.Add(new Border { Background = W.Surface, CornerRadius = new CornerRadius(12), Padding = new Thickness(10, 8, 6, 8), Child = box });
             var bar = new Grid { Margin = new Thickness(0, 14, 0, 0) };
             var open = new FlatLink(L.T("Открыть файл", "Open file")) { HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center };
             open.Click += delegate
@@ -627,7 +627,9 @@ namespace ZapretGui
                 summary.Foreground = W.Accent;
                 summary.Text = L.T("Скопировано вместе со сведениями о системе — можно вставить в сообщение", "Copied with system info — paste it into a message");
             };
-            bar.Children.Add(open); bar.Children.Add(copy);
+            var exp = new FlatLink(L.T("Сохранить в файл…", "Save to a file…")) { HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(110, 0, 0, 0) };
+            exp.Click += delegate { ExportLog(); };
+            bar.Children.Add(open); bar.Children.Add(exp); bar.Children.Add(copy);
             sp.Children.Add(bar);
             Root.Child = sp;
             onAdded = line => Dispatcher.BeginInvoke((Action)Fill);
@@ -638,6 +640,25 @@ namespace ZapretGui
 
         readonly TextBox search;
         readonly RangeTab onlyErrors;
+        readonly StackPanel rows = new StackPanel();
+        List<string> shown = new List<string>();
+        static readonly string[] ErrorWords = { "ошибк", "error", "не удалось", "failed", "could not", "не помог", "didn't help" };
+        static readonly string[] GoodWords = { "обход включён", "bypass on", "снова работает", "works again", "заработало", "обновлён", "updated" };
+
+        // Выгрузить показанные записи в текстовый файл.
+        void ExportLog()
+        {
+            var d = new Microsoft.Win32.SaveFileDialog { Filter = L.T("Текстовые файлы|*.txt", "Text files|*.txt"), FileName = "zapretgui-log-" + DateTime.Now.ToString("yyyy-MM-dd") + ".txt" };
+            if (d.ShowDialog(this) != true) return;
+            try
+            {
+                string text = string.Join("\r\n", shown), prof = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+                if (!string.IsNullOrEmpty(prof)) text = text.Replace(prof, "%USERPROFILE%");
+                File.WriteAllText(d.FileName, text, new System.Text.UTF8Encoding(true));
+                summary.Foreground = W.Accent; summary.Text = L.T("Сохранено: ", "Saved: ") + d.FileName;
+            }
+            catch (Exception ex) { summary.Foreground = W.Danger; summary.Text = ex.Message; }
+        }
         // слова, по которым запись считается проблемой
         static readonly string[] ProblemWords = { "ошибк", "error", "не удалось", "failed", "could not", "завершился", "exited", "сбой", "problem", "не помог", "didn't help", "не открыва", "doesn't open", "2/3", "1/3", "0/3", "проблем" };
 
@@ -648,8 +669,18 @@ namespace ZapretGui
             bool errs = onlyErrors != null && onlyErrors.On;
             var lines = all.Where(l => (q == "" || l.IndexOf(q, StringComparison.OrdinalIgnoreCase) >= 0) &&
                                        (!errs || ProblemWords.Any(w => l.IndexOf(w, StringComparison.OrdinalIgnoreCase) >= 0))).ToList();
-            box.Text = lines.Count == 0 ? (all.Count == 0 ? L.T("Пока записей нет.", "No entries yet.") : L.T("Ничего не найдено.", "Nothing found.")) : string.Join("\r\n", lines);
+            rows.Children.Clear();
+            if (lines.Count == 0) rows.Children.Add(W.T(all.Count == 0 ? L.T("Пока записей нет.", "No entries yet.") : L.T("Ничего не найдено.", "Nothing found."), W.Small, W.Muted));
+            foreach (string l in lines)
+            {
+                Brush c = ErrorWords.Any(w => l.IndexOf(w, StringComparison.OrdinalIgnoreCase) >= 0) ? W.Danger
+                        : ProblemWords.Any(w => l.IndexOf(w, StringComparison.OrdinalIgnoreCase) >= 0) ? W.Warn
+                        : GoodWords.Any(w => l.IndexOf(w, StringComparison.OrdinalIgnoreCase) >= 0) ? (Brush)W.Accent : W.Text;
+                var tb = new TextBlock { Text = l, Foreground = c, FontFamily = W.MonoFont, FontSize = 12, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 1, 0, 1) };
+                rows.Children.Add(tb);
+            }
             box.ScrollToEnd();
+            shown = lines;
             summary.Foreground = W.Muted;
             summary.Text = L.T("Записей: " + all.Count, "Entries: " + all.Count) + (lines.Count != all.Count ? L.T(", показано: " + lines.Count, ", shown: " + lines.Count) : "") +
                 L.T("  ·  хранятся последние " + Journal.Keep, "  ·  the last " + Journal.Keep + " are kept");

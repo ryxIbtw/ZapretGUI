@@ -165,11 +165,12 @@ namespace ZapretGui
         // Тема Windows поменялась — подстроиться, если выбрано «Как в Windows».
         void OnSystemPrefs(object sender, UserPreferenceChangedEventArgs e)
         {
-            if (e.Category != UserPreferenceCategory.General) return;
+            if (e.Category != UserPreferenceCategory.General && e.Category != UserPreferenceCategory.Accessibility && e.Category != UserPreferenceCategory.Color) return;
             Post(() =>
             {
                 if (ThemeMode != "system") return;
-                if (Theme.ResolveLight("system") == Theme.IsLight) return;
+                bool hc = Theme.SystemHighContrast;
+                if ((Theme.Flavor == "contrast") == hc && (hc || Theme.ResolveLight("system") == Theme.IsLight)) return;
                 Theme.ApplyMode("system");
                 Recolor();
             });

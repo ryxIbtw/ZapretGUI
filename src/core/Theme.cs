@@ -86,13 +86,45 @@ namespace ZapretGui
         // Оттенок темы: "" — обычная, "amoled" — чёрная (поверх тёмной), "warm" — тёплая (поверх светлой).
         public static string Flavor = "";
 
-        // Режимы из настроек: system, dark, light, amoled, warm.
-        public static readonly string[] Modes = { "system", "dark", "light", "amoled", "warm" };
+        // Режимы из настроек: system, dark, light, amoled, warm, contrast (высокий контраст).
+        public static readonly string[] Modes = { "system", "dark", "light", "amoled", "warm", "contrast" };
+
+        // Включён ли в Windows режим высокой контрастности.
+        public static bool SystemHighContrast { get { try { return System.Windows.Forms.SystemInformation.HighContrast; } catch { return false; } } }
 
         public static void ApplyMode(string mode)
         {
-            Flavor = mode == "amoled" ? "amoled" : mode == "warm" ? "warm" : "";
-            Apply(ResolveLight(mode));
+            // «Как в Windows» при включённой высокой контрастности Windows — тоже контрастная тема
+            bool contrast = mode == "contrast" || mode == "system" && SystemHighContrast;
+            Flavor = contrast ? "contrast" : mode == "amoled" ? "amoled" : mode == "warm" ? "warm" : "";
+            Apply(contrast ? ContrastIsLight() : ResolveLight(mode));
+        }
+
+        // Контрастная тема берёт цвета Windows, если там включена высокая контрастность, иначе — чёрный фон, белый текст, жёлтый акцент.
+        static bool ContrastIsLight()
+        {
+            if (!SystemHighContrast) return false;
+            Color w = SystemColors.Window;
+            return (w.R + w.G + w.B) / 3 > 128;
+        }
+
+        static void ApplyContrast()
+        {
+            bool sys = SystemHighContrast;
+            Bg = sys ? SystemColors.Window : C(0x000000);
+            Surface = Bg;
+            Text = sys ? SystemColors.WindowText : C(0xFFFFFF);
+            Line = Text;
+            Muted = Text;
+            Dim = sys ? SystemColors.GrayText : C(0xC8C8C8);
+            Accent = sys ? SystemColors.Highlight : C(0xFFFF00);
+            AccentDeep = Bg;
+            SurfaceHover = sys ? SystemColors.Highlight : C(0x1A1A1A);
+            Knob = sys ? SystemColors.ControlDark : C(0x5A5A5A);
+            Warn = sys ? SystemColors.HotTrack : C(0xFFC800);
+            Danger = C(IsLight ? 0xC00000 : 0xFF6E6E);
+            KnobDotOff = Text; KnobDotOn = IsLight ? Color.White : Color.Black;
+            HoverTint = Text;
         }
 
         public static void Apply(bool light)
@@ -124,6 +156,7 @@ namespace ZapretGui
                     Knob = C(0x2C2C31); Dim = C(0x55565C);
                 }
             }
+            if (Flavor == "contrast") { ApplyContrast(); return; }   // в контрастной теме акцент не меняется
             int[] pal;
             if (AccentName == "windows") { int w = WindowsAccentRgb(); if (w >= 0) ApplyFreeAccent(w, light); }
             else if (AccentName == "custom")
@@ -144,6 +177,7 @@ namespace ZapretGui
         {
             if (mode == "light" || mode == "warm") return true;
             if (mode == "dark" || mode == "amoled") return false;
+            if (mode == "contrast") return ContrastIsLight();
             return SystemPrefersLight();
         }
 
