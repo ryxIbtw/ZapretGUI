@@ -27,7 +27,8 @@ namespace ZapretGui
         {
             L.Init();
             string rootArg = null, snap = null;
-            bool hidden = false, scheduledPick = false;
+            bool hidden = false, scheduledPick = false, moved = false;
+            string removeOld = null;        // после переезда в папку zapret — старая копия программы, которую нужно убрать
             int waitPid = 0, command = 0;   // команды для ярлыков: 1 — --on, 2 — --off, 3 — --toggle
             for (int i = 0; i < args.Length; i++)
             {
@@ -38,6 +39,8 @@ namespace ZapretGui
                 else if (args[i] == "--toggle") { command = 3; hidden = true; }
                 else if (args[i] == "--root" && i + 1 < args.Length) rootArg = args[++i];
                 else if (args[i] == "--wait-pid" && i + 1 < args.Length) int.TryParse(args[++i], out waitPid);
+                else if (args[i] == "--remove-old" && i + 1 < args.Length) removeOld = args[++i];
+                else if (args[i] == "--moved") moved = true;
 #if TESTHOOKS
                 else if (args[i] == "--snap" && i + 1 < args.Length) snap = args[++i];
 #endif
@@ -46,6 +49,7 @@ namespace ZapretGui
             // после самообновления: дождаться, пока старая копия закроется, и убрать её файл
             if (waitPid > 0) { try { System.Diagnostics.Process.GetProcessById(waitPid).WaitForExit(15000); } catch { } }
             SelfUpdate.CleanupOld();
+            if (removeOld != null) SelfMove.RemoveOldCopy(removeOld);
 
             bool first;
             using (var mutex = new Mutex(true, "ZapretGUI_SingleInstance", out first))
@@ -66,7 +70,7 @@ namespace ZapretGui
                 W.Sync();
 
                 string root = FindRoot(rootArg);
-                if (root == null) return 1;
+                if (root == null) return relaunched ? 0 : 1;   // relaunched — программа переехала в папку zapret и запустилась оттуда
                 var z = new Zapret(root);
 
                 var w = new MainWindow(z, snap, hidden);
@@ -74,6 +78,19 @@ namespace ZapretGui
                 if (snap != null) { Snap.Run(w, snap); app.Run(); return 0; }
 #endif
                 if (!w.StartHidden) w.Show();
+                if (moved)
+                {
+                    // только что переехали в папку zapret — предложить ярлык, чтобы программу было легко найти
+                    var tm = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(600) };
+                    tm.Tick += delegate
+                    {
+                        tm.Stop();
+                        if (AskW.Show(w, L.T("Программа теперь лежит в папке ", "The app now lives in ") + Path.GetDirectoryName(WF.Application.ExecutablePath) +
+                                L.T(".\n\nСоздать ярлык на рабочем столе и в меню «Пуск»?", ".\n\nCreate a shortcut on the desktop and in the Start menu?"),
+                                "Zapret", MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes) w.CreateShortcutsPublic();
+                    };
+                    tm.Start();
+                }
                 if (command > 0)
                 {
                     int cmd = command;
@@ -99,16 +116,18 @@ namespace ZapretGui
             foreach (string c in new[] { arg, exeDir, Prefs.Get("Root", null) })
                 if (Zapret.IsValidRoot(c)) { Prefs.Set("Root", Path.GetFullPath(c)); return Path.GetFullPath(c); }
 
-            // папки нет — предложить скачать zapret самим (Да) или указать папку (Нет)
-            var ans = AskW.Show(null, L.T("Не найдена папка zapret-discord-youtube.\n\nСкачать последнюю версию zapret от Flowseal с GitHub в папку C:\\zapret?\n\n«Да» — скачать, «Нет» — указать папку вручную.",
-                "zapret-discord-youtube folder not found.\n\nDownload the latest zapret by Flowseal from GitHub to C:\\zapret?\n\n“Yes” — download, “No” — pick the folder yourself."),
+            // папки нет — предложить скачать zapret и переехать туда (Да) или указать папку самому (Нет)
+            string target = @"C:\zapret";
+            if (Directory.Exists(target) && Directory.EnumerateFileSystemEntries(target).Any() && !Zapret.IsValidRoot(target))
+                target = @"C:\zapret-discord-youtube";
+            var ans = AskW.Show(null, L.T("Не найдена папка zapret-discord-youtube.\n\nСкачать последнюю версию zapret от Flowseal с GitHub в папку " + target + " и перенести программу туда же?\n\n" +
+                    "«Да» — скачать и перенести (программа запустится уже из новой папки), «Нет» — указать папку zapret вручную.",
+                "zapret-discord-youtube folder not found.\n\nDownload the latest zapret by Flowseal from GitHub to " + target + " and move the app there?\n\n" +
+                    "“Yes” — download and move (the app restarts from the new folder), “No” — pick the zapret folder yourself."),
                 "Zapret", MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
             if (ans == MessageBoxResult.Cancel) return null;
             if (ans == MessageBoxResult.Yes)
             {
-                string target = @"C:\zapret";
-                if (Directory.Exists(target) && Directory.EnumerateFileSystemEntries(target).Any() && !Zapret.IsValidRoot(target))
-                    target = @"C:\zapret-discord-youtube";
                 Exception err = null;
                 var wait = new Window { Title = "Zapret", Width = 360, Height = 120, WindowStartupLocation = WindowStartupLocation.CenterScreen, ResizeMode = ResizeMode.NoResize,
                     Background = W.Bg, Content = new System.Windows.Controls.TextBlock { Text = L.T("Скачиваю zapret…", "Downloading zapret…"), Foreground = W.Text, FontSize = 14,
@@ -120,6 +139,12 @@ namespace ZapretGui
                 {
                     Journal.Add(L.T("zapret скачан в ", "zapret downloaded to ") + target);
                     Prefs.Set("Root", target);
+                    // перенести себя в папку zapret и запуститься оттуда; не вышло — работаем с того места, где есть
+                    string err2;
+                    if (SelfMove.MoveTo(target, out err2)) { relaunched = true; return null; }
+                    if (err2 != null)
+                        AskW.Show(null, L.T("zapret скачан, но перенести программу не удалось: ", "zapret is downloaded, but the app could not be moved: ") + err2 +
+                            L.T("\n\nПрограмма продолжит работать с того места, где лежит сейчас.", "\n\nThe app keeps working from where it is now."), "Zapret", MessageBoxButton.OK, MessageBoxImage.Warning);
                     return target;
                 }
                 AskW.Show(null, L.T("Не удалось скачать zapret: ", "Could not download zapret: ") + (err != null ? err.Message : "?") +
@@ -134,8 +159,55 @@ namespace ZapretGui
             }
         }
 
+        static bool relaunched;
+
         [DllImport("user32.dll")]
         static extern bool PostMessage(IntPtr hWnd, int msg, IntPtr w, IntPtr l);
+    }
+
+    // Переезд программы в папку zapret при первом запуске (например, из «Загрузок»).
+    static class SelfMove
+    {
+        // Копирует себя в dir и запускает копию; старая копия будет удалена новой, когда эта закроется.
+        // true — новая копия запущена (этой нужно закрыться); false — переезд не нужен (err == null) или не удался (err — причина).
+        public static bool MoveTo(string dir, out string err)
+        {
+            err = null;
+            try
+            {
+                string exe = WF.Application.ExecutablePath;
+                string dst = Path.Combine(dir, "ZapretGUI.exe");
+                if (string.Equals(Path.GetFullPath(Path.GetDirectoryName(exe)).TrimEnd('\\'), Path.GetFullPath(dir).TrimEnd('\\'), StringComparison.OrdinalIgnoreCase)) return false;
+                File.Copy(exe, dst, true);
+                // переносной режим: файл настроек тоже переезжает (старый остаётся на месте)
+                string ini = Path.Combine(Path.GetDirectoryName(exe), "ZapretGUI.ini");
+                if (File.Exists(ini) && !File.Exists(Path.Combine(dir, "ZapretGUI.ini"))) File.Copy(ini, Path.Combine(dir, "ZapretGUI.ini"));
+                Journal.Add(L.T("Программа переехала: ", "The app moved: ") + exe + " → " + dst);
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(dst,
+                    "--wait-pid " + System.Diagnostics.Process.GetCurrentProcess().Id + " --remove-old \"" + exe + "\" --moved") { UseShellExecute = false, WorkingDirectory = dir });
+                return true;
+            }
+            catch (Exception ex) { err = ex.Message; return false; }
+        }
+
+        // Удаляет старую копию программы — только если это точно та же программа (совпадает контрольная сумма) и не мы сами.
+        public static void RemoveOldCopy(string path)
+        {
+            try
+            {
+                string self = WF.Application.ExecutablePath;
+                if (!path.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) || !File.Exists(path)) return;
+                if (string.Equals(Path.GetFullPath(path), Path.GetFullPath(self), StringComparison.OrdinalIgnoreCase)) return;
+                string a = SelfUpdate.FileSha256(path), b = SelfUpdate.FileSha256(self);
+                if (a == null || a != b) { Journal.Add(L.T("Старая копия программы оставлена на месте (файлы отличаются): ", "The old app copy was kept (files differ): ") + path); return; }
+                for (int i = 0; i < 10; i++)   // старая копия может ещё закрываться
+                {
+                    try { File.Delete(path); Journal.Add(L.T("Старая копия программы удалена: ", "The old app copy was removed: ") + path); return; }
+                    catch { Thread.Sleep(500); }
+                }
+            }
+            catch { }
+        }
     }
 
 #if TESTHOOKS

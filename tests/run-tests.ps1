@@ -155,6 +155,16 @@ Check ("карта: перебои в {0}-й день в 10 часов (полу
 $per = $S.GetMethod('UpByDayPerStrategy', $BF).Invoke($null, @($recs, $from, 1))
 Check ("сравнение стратегий: A ~83% в этот день (получилось {0:N1})" -f $per['A'][0]) ($per.ContainsKey('A') -and $per['A'][0] -gt 80 -and $per['A'][0] -lt 86)
 
+# ---------- переезд в папку zapret: чужой файл не удаляется ----------
+"Переезд программы"
+$other = [string](Join-Path $tmp 'ZapretGUI-other.exe')
+[IO.File]::WriteAllBytes($other, [byte[]](1..64))
+$asm.GetType('ZapretGui.SelfMove').GetMethod('RemoveOldCopy', $BF).Invoke($null, @($other))
+Check 'другой файл с тем же именем остаётся на месте' (Test-Path $other)
+$notExe = [string](Join-Path $tmp 'notes.txt'); 'x' | Set-Content $notExe
+$asm.GetType('ZapretGui.SelfMove').GetMethod('RemoveOldCopy', $BF).Invoke($null, @($notExe))
+Check 'не-exe файл не трогается' (Test-Path $notExe)
+
 # ---------- DNS (только чтение) ----------
 $dns = (T 'Diag').GetMethod('DnsCheck', $BF).Invoke($null, @())
 Check "проверка DNS отвечает: $($dns.Title)" ($dns -ne $null -and $dns.Title -ne '')

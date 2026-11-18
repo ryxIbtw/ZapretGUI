@@ -37,6 +37,7 @@ namespace ZapretGui
         public void SelectStrategyPublic(string name) { SelectStrategy(name); }
         public Zapret Zap { get { return z; } }
         public string JournalHeaderPublic() { return JournalHeader(); }
+        public void CreateShortcutsPublic() { CreateShortcuts(); }
 
         // Заметка к стратегии, например «лучшая вечером».
         public static string Note(string name) { return Prefs.Get("Note:" + name, ""); }
