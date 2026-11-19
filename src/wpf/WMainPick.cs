@@ -88,8 +88,8 @@ namespace ZapretGui
                             else
                             {
                                 FlowTest.RunStandard(res, targets, () => cancelPick);
-                                // скорость — только для сведения, на выбор лучшей не влияет
-                                if (res.Ok > 0 && !cancelPick) res.SpeedKBps = NetCheck.SpeedKBps(NetCheck.SpeedUrl, 8000);
+                                // скорость решает только среди равных по проверкам и только если разница заметная (PickResult.Rank)
+                                if (res.Ok > 0 && !cancelPick) res.SpeedKBps = NetCheck.SpeedSample(() => cancelPick);
                             }
                         }
                         if (cancelPick && !res.Failed) break;   // недопроверенную не показываем

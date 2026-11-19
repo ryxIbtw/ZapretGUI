@@ -42,18 +42,44 @@ namespace ZapretGui
         // 2 — прошла все проверки, 1 — частично, 0 — не работала
         public int Level { get { return Ratio >= 0.999 ? 2 : Works ? 1 : 0; } }
 
+        // Разница в скорости меньше чем в полтора раза — это шум замера, а не разница стратегий.
+        public const double SpeedMargin = 1.5;
+
         // Как у Flowseal: больше всего успешных проверок, при равенстве — больше ответов на пинг.
-        // Если и это равно — быстрее та, у которой выше скорость (у Flowseal порядок при равенстве случайный).
-        // Старые результаты (до 2.1) — по прежнему правилу.
+        // Если и это равно — вперёд та, что заметно (в SpeedMargin раз) быстрее; близкие по скорости остаются
+        // в порядке списка zapret, неудачный замер скорости — в конце равных. Старые результаты (до 2.1) — по прежнему правилу.
         public static List<PickResult> Rank(IEnumerable<PickResult> list)
         {
             var all = list.ToList();
             if (all.Any(r => r.IsNew))
-                return all.OrderBy(r => r.Failed ? 1 : 0)
-                          .ThenByDescending(r => r.Ok)
-                          .ThenByDescending(r => r.PingOk)
-                          .ThenByDescending(r => r.SpeedKBps)
-                          .ToList();
+            {
+                var order = new Dictionary<PickResult, int>();
+                for (int k = 0; k < all.Count; k++) order[all[k]] = k;
+                var sorted = all.OrderBy(r => r.Failed ? 1 : 0)
+                                .ThenByDescending(r => r.Ok)
+                                .ThenByDescending(r => r.PingOk)
+                                .ThenByDescending(r => r.SpeedKBps)
+                                .ToList();
+                var res = new List<PickResult>();
+                int i = 0;
+                while (i < sorted.Count)
+                {
+                    int j = i;
+                    while (j < sorted.Count && sorted[j].Failed == sorted[i].Failed && sorted[j].Ok == sorted[i].Ok && sorted[j].PingOk == sorted[i].PingOk) j++;
+                    int a = i;
+                    while (a < j)
+                    {
+                        double top = sorted[a].SpeedKBps;
+                        int b = a + 1;
+                        if (top > 0) { while (b < j && sorted[b].SpeedKBps > 0 && sorted[b].SpeedKBps * SpeedMargin >= top) b++; }
+                        else b = j;
+                        res.AddRange(sorted.GetRange(a, b - a).OrderBy(r => order[r]));
+                        a = b;
+                    }
+                    i = j;
+                }
+                return res;
+            }
             return all.OrderByDescending(r => Math.Round(r.Ratio, 3))
                       .ThenByDescending(r => r.SpeedKBps)
                       .ThenBy(r => r.AvgMs)

@@ -107,6 +107,23 @@ namespace ZapretGui
             list.Add(inOd ? Bad(L.T("zapret лежит в папке OneDrive", "zapret is inside OneDrive"), L.T("Перенесите, например, в C:\\zapret", "Move it, e.g. to C:\\zapret"))
                           : Ok(L.T("zapret не в OneDrive", "zapret is not in OneDrive")));
 
+            // Права на папку: из неё служба запускается от имени SYSTEM
+            string who = FolderAcl.WritableBy(z.Root);
+            if (who == null) list.Add(Ok(L.T("Папку zapret меняют только администраторы", "Only administrators can change the zapret folder")));
+            else
+            {
+                var it = Bad(L.T("Папку zapret могут менять программы без прав администратора", "Programs without admin rights can change the zapret folder"),
+                    L.T("Запись есть у: ", "Write access: ") + who +
+                    L.T(". Служба zapret запускается из этой папки от имени SYSTEM, поэтому вредоносная программа могла бы подменить winws.exe. " +
+                        "«Защитить» оставит запись только администраторам, как в Program Files.",
+                        ". The zapret service runs from this folder as SYSTEM, so malware could replace winws.exe. " +
+                        "“Protect” leaves write access to administrators only, like Program Files."));
+                it.FixText = L.T("Защитить", "Protect");
+                string root = z.Root;
+                it.Fix = () => { FolderAcl.Harden(root); Journal.Add(L.T("Права на папку zapret: запись только у администраторов", "zapret folder permissions: write access for administrators only")); };
+                list.Add(it);
+            }
+
             bool sys = Directory.Exists(z.Bin) && Directory.GetFiles(z.Bin, "*.sys").Length > 0;
             list.Add(sys ? Ok(L.T("Драйвер WinDivert на месте", "WinDivert driver present"))
                          : Bad(L.T("Не найден WinDivert64.sys", "WinDivert64.sys not found"), L.T("Перекачайте zapret или проверьте антивирус", "Re-download zapret or check your antivirus")));

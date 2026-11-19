@@ -14,6 +14,11 @@ $asm = [Reflection.Assembly]::LoadFrom($Exe)
 $BF = [Reflection.BindingFlags]'Public,NonPublic,Static'
 function T($n) { $asm.GetType("ZapretGui.$n") }
 $script:pass = 0; $script:fail = 0
+# журнал, статистика и история подборов — во временную папку, чтобы тесты не попадали в настоящие файлы
+(T 'Journal').GetField('PathOverride', $BF).SetValue($null, (Join-Path $tmp 'events.log'))
+(T 'Stats').GetField('PathOverride', $BF).SetValue($null, (Join-Path $tmp 'stats-none.tsv'))
+(T 'Stats').GetField('Enabled', $BF).SetValue($null, $false)
+(T 'PickHistory').GetField('PathOverride', $BF).SetValue($null, (Join-Path $tmp 'pick-history.tsv'))
 function Check($name, $cond) {
     if ($cond) { $script:pass++; "  ok    $name" } else { $script:fail++; "  FAIL  $name" }
 }
@@ -28,6 +33,23 @@ $list.Add((NewPick 'slow' 36 16 300)); $list.Add((NewPick 'fast' 36 16 2400)); $
 $ranked = $PR.GetMethod('Rank', $BF).Invoke($null, [object[]]@(,$list))
 Check 'при равенстве первой идёт самая быстрая' ($ranked[0].Name -eq 'fast' -and $ranked[1].Name -eq 'slow')
 Check 'больше пингов важнее скорости' ($ranked[2].Name -eq 'fewping')
+$list2 = [Activator]::CreateInstance($lt)
+$list2.Add((NewPick 'first' 36 16 400)); $list2.Add((NewPick 'zero' 36 16 0)); $list2.Add((NewPick 'close' 36 16 450)); $list2.Add((NewPick 'much' 36 16 900))
+$r2 = $PR.GetMethod('Rank', $BF).Invoke($null, [object[]]@(,$list2))
+Check "близкая скорость — порядок списка, неудачный замер — в конце равных ($(($r2 | % Name) -join ', '))" (($r2 | % Name) -join ',' -eq 'much,first,close,zero')
+
+# ---------- перепроверка и сервер видео ----------
+$NC = T 'NetCheck'
+$node = $NC.GetMethod('FindVideoNode', $BF).Invoke($null, @('..."url":"https://rr3---sn-4vguxm-n8vl.googlevideo.com/generate_204"...'))
+Check "сервер видео находится в тексте страницы ($node)" ($node -eq 'rr3---sn-4vguxm-n8vl.googlevideo.com')
+Check 'нет сервера в тексте — null' ($NC.GetMethod('FindVideoNode', $BF).Invoke($null, @('<html>nothing</html>')) -eq $null)
+$S2 = T 'Stats'; $SR2 = T 'StatRec'
+$S2.GetField('PathOverride', $BF).SetValue($null, (Join-Path $tmp 'stats-fails.tsv')); $S2.GetField('Enabled', $BF).SetValue($null, $true)
+$fr = [Activator]::CreateInstance($SR2); $fr.T = [DateTime]::Now; $fr.On = $true; $fr.Strategy = 'B'; $fr.YtMax = 3; $fr.Yt = 3; $fr.DcMax = 3; $fr.Dc = 3; $fr.Fails = 'i.ytimg.com~'
+$S2.GetMethod('Add', $BF).Invoke($null, @($fr))
+$back = $S2.GetMethod('LoadCached', $BF).Invoke($null, @([DateTime]::Today.AddDays(-1)))
+Check "в статистике сохраняется, какой адрес не ответил ($($back[$back.Count-1].Fails))" ($back[$back.Count-1].Fails -eq 'i.ytimg.com~')
+$S2.GetField('PathOverride', $BF).SetValue($null, (Join-Path $tmp 'stats-none.tsv')); $S2.GetField('Enabled', $BF).SetValue($null, $false)
 Check 'меньше успешных — ниже всех' ($ranked[3].Name -eq 'worse')
 Check '«наравне» определяется без учёта скорости' ($ranked[1].SameScore($ranked[0]) -and -not $ranked[2].SameScore($ranked[0]))
 
@@ -64,7 +86,8 @@ $c1 = $S.GetMethod('LoadCached', $BF).Invoke($null, @([DateTime]::Today.AddDays(
 AddRec 1
 $c2 = $S.GetMethod('LoadCached', $BF).Invoke($null, @([DateTime]::Today.AddDays(-1)))
 Check "дочитывает новые строки (было $($c1.Count), стало $($c2.Count))" ($c1.Count -eq 2 -and $c2.Count -eq 3)
-$S.GetField('PathOverride', $BF).SetValue($null, $null)
+$S.GetField('PathOverride', $BF).SetValue($null, (Join-Path $tmp 'stats-none.tsv'))
+$S.GetField('Enabled', $BF).SetValue($null, $false)
 
 # ---------- списки ----------
 "Списки"
@@ -168,6 +191,23 @@ Check 'не-exe файл не трогается' (Test-Path $notExe)
 # ---------- DNS (только чтение) ----------
 $dns = (T 'Diag').GetMethod('DnsCheck', $BF).Invoke($null, @())
 Check "проверка DNS отвечает: $($dns.Title)" ($dns -ne $null -and $dns.Title -ne '')
+
+# ---------- права на папку zapret (только в памяти, на диске ничего не меняется) ----------
+"Права на папку"
+$FA = T 'FolderAcl'
+$secTmp = [IO.Directory]::GetAccessControl($tmp)
+$whoTmp = $FA.GetMethod('OthersWho', $BF).Invoke($null, @($secTmp))
+Check "папка в профиле пользователя распознаётся как доступная для записи ($whoTmp)" ($whoTmp -ne $null)
+$hard = [IO.Directory]::GetAccessControl($tmp)
+$FA.GetMethod('HardenRoot', $BF).Invoke($null, @($hard))
+Check 'после защиты запись есть только у администраторов и SYSTEM' ($FA.GetMethod('OthersWho', $BF).Invoke($null, @($hard)) -eq $null)
+$sddl = $hard.GetSecurityDescriptorSddlForm('All')
+Check "защищённые права: владелец — администраторы, без наследования от диска ($sddl)" ($sddl -like 'O:BA*' -and $sddl -like '*D:P*' -and $sddl -like '*;BU)*')
+$ini = [System.Security.AccessControl.DirectorySecurity]::new()
+$ini.SetSecurityDescriptorSddlForm('O:BAG:SYD:PAI(A;OICI;FA;;;BA)(A;OICI;FA;;;SY)(A;OICIIO;GA;;;AU)')
+Check 'запись «только для вложенных» тоже считается опасной' ($FA.GetMethod('OthersWho', $BF).Invoke($null, @($ini)) -ne $null)
+$pf = $FA.GetMethod('WritableBy', $BF).Invoke($null, @([string]$env:ProgramFiles))
+Check "Program Files не считается доступной для записи" ($pf -eq $null)
 
 # ---------- описание релиза ----------
 "Разное"

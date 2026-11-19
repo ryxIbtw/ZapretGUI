@@ -15,8 +15,8 @@ using WF = System.Windows.Forms;
 [assembly: AssemblyCompany("ryxIbtw")]
 [assembly: AssemblyCopyright("© ryxIbtw")]
 [assembly: AssemblyDescription("Интерфейс для zapret-discord-youtube by Flowseal. GUI by ryxIbtw")]
-[assembly: AssemblyVersion("2.5.1.0")]
-[assembly: AssemblyFileVersion("2.5.1.0")]
+[assembly: AssemblyVersion("2.6.0.0")]
+[assembly: AssemblyFileVersion("2.6.0.0")]
 
 namespace ZapretGui
 {
@@ -132,7 +132,19 @@ namespace ZapretGui
                 var wait = new Window { Title = "Zapret", Width = 360, Height = 120, WindowStartupLocation = WindowStartupLocation.CenterScreen, ResizeMode = ResizeMode.NoResize,
                     Background = W.Bg, Content = new System.Windows.Controls.TextBlock { Text = L.T("Скачиваю zapret…", "Downloading zapret…"), Foreground = W.Text, FontSize = 14,
                         HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center } };
-                var th = new Thread(() => { try { Zapret.InstallFresh(target); } catch (Exception ex) { err = ex; } wait.Dispatcher.BeginInvoke((Action)wait.Close); }) { IsBackground = true };
+                var th = new Thread(() =>
+                {
+                    try
+                    {
+                        // сначала закрыть папку от записи без прав администратора, потом класть в неё файлы
+                        Directory.CreateDirectory(target);
+                        try { FolderAcl.Harden(target); }
+                        catch (Exception ex) { Journal.Add(L.T("Не удалось защитить права на папку ", "Could not protect permissions of ") + target + ": " + ex.Message); }
+                        Zapret.InstallFresh(target);
+                    }
+                    catch (Exception ex) { err = ex; }
+                    wait.Dispatcher.BeginInvoke((Action)wait.Close);
+                }) { IsBackground = true };
                 wait.Loaded += delegate { th.Start(); };
                 wait.ShowDialog();
                 if (err == null && Zapret.IsValidRoot(target))

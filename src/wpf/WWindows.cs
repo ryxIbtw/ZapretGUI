@@ -316,8 +316,8 @@ namespace ZapretGui
             if (ties > 0)
                 sp.Children.Insert(2, new TextBlock
                 {
-                    Text = L.T("«=1» — результат такой же, как у лучшей (" + ties + " шт.). Из них первой стоит самая быстрая.",
-                               "“=1” — same result as the best (" + ties + "). The fastest of them is first."),
+                    Text = L.T("«=1» — результат такой же, как у лучшей (" + ties + " шт.). Из них первой стоит заметно (в 1,5 раза и больше) более быстрая, а близкие по скорости — по порядку списка zapret.",
+                               "“=1” — same result as the best (" + ties + "). A clearly faster one (1.5× or more) goes first; similar speeds keep zapret's list order."),
                     TextWrapping = TextWrapping.Wrap, Foreground = W.Accent, FontSize = W.Small, Margin = new Thickness(0, -4, 0, 10),
                 });
             sp.Children.Add(new ScrollViewer { Content = list, Height = 430, VerticalScrollBarVisibility = ScrollBarVisibility.Auto });

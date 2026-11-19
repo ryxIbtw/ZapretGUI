@@ -2,6 +2,7 @@
 using System;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Net;
 using System.Security;
 using System.Security.Principal;
@@ -28,7 +29,10 @@ namespace ZapretGui
     // Проверка, открываются ли YouTube и Discord (как в utils\test zapret.ps1).
     static class NetCheck
     {
-        public static readonly string[] YouTube = { "https://www.youtube.com", "https://i.ytimg.com", "https://redirector.googlevideo.com" };
+        // Третий адрес YouTube — сервер, с которого вам на самом деле идёт видео (rrN---sn-….googlevideo.com).
+        // Он берётся со страницы видео (раз в 6 часов); пока неизвестен — общий redirector.googlevideo.com.
+        public const string Redirector = "https://redirector.googlevideo.com";
+        public static readonly string[] YouTube = { "https://www.youtube.com", "https://i.ytimg.com", Redirector };
         public static readonly string[] Discord = { "https://discord.com", "https://gateway.discord.gg", "https://cdn.discordapp.com" };
         public static int Max { get { return YouTube.Length + Discord.Length; } }
 
@@ -40,6 +44,72 @@ namespace ZapretGui
 
         // Картинка-превью YouTube (~65 КБ) для замера скорости.
         public const string SpeedUrl = "https://i.ytimg.com/vi/dQw4w9WgXcQ/maxresdefault.jpg";
+        // Для подбора — три картинки разного размера (65, 180 и 80 КБ), берётся середина: одна картинка слишком случайна.
+        public static readonly string[] SpeedUrls = {
+            SpeedUrl, "https://i.ytimg.com/vi/9bZkp7q19f0/maxresdefault.jpg", "https://i.ytimg.com/vi/kJQP7kiw5Fk/maxresdefault.jpg" };
+
+        // ---------- сервер видео ----------
+        public const string WatchUrl = "https://www.youtube.com/watch?v=dQw4w9WgXcQ";
+        static readonly System.Text.RegularExpressions.Regex NodeRx =
+            new System.Text.RegularExpressions.Regex(@"rr\d{1,2}---sn-[a-z0-9\-]{4,40}\.googlevideo\.com");
+        static DateTime nodeAt = DateTime.MinValue, nodeTry = DateTime.MinValue;
+        static int nodeBusy;
+        public static string VideoNode { get; private set; }   // null — неизвестен
+
+        public static string VideoNodeUrl(string host) { return "https://" + host + "/generate_204"; }
+
+        // Имя сервера видео из текста страницы YouTube или null.
+        public static string FindVideoNode(string html)
+        {
+            if (string.IsNullOrEmpty(html)) return null;
+            var m = NodeRx.Match(html);
+            return m.Success ? m.Value : null;
+        }
+
+        // В фоне узнать сервер видео, если он неизвестен или устарел (раз в 6 часов; после неудачи — через 30 минут).
+        public static void RefreshVideoNodeSoon()
+        {
+            DateTime now = DateTime.UtcNow;
+            if (VideoNode != null && now - nodeAt < TimeSpan.FromHours(6)) return;
+            if (now - nodeTry < TimeSpan.FromMinutes(30)) return;
+            if (Interlocked.Exchange(ref nodeBusy, 1) == 1) return;
+            nodeTry = now;
+            new Thread(() =>
+            {
+                try
+                {
+                    string host = FindVideoNode(Download(WatchUrl, 15000, 4 * 1024 * 1024));
+                    if (host != null && Probe(VideoNodeUrl(host), 5000))
+                    {
+                        if (host != VideoNode) Journal.Add(L.T("Сервер видео YouTube: ", "YouTube video server: ") + host);
+                        VideoNode = host; nodeAt = DateTime.UtcNow;
+                        YouTube[2] = VideoNodeUrl(host);
+                    }
+                }
+                catch { }
+                finally { Interlocked.Exchange(ref nodeBusy, 0); }
+            }) { IsBackground = true }.Start();
+        }
+
+        // Текст страницы (не больше max байт) или null.
+        static string Download(string url, int timeout, int max)
+        {
+            try
+            {
+                var req = Request(url, timeout);
+                req.AllowAutoRedirect = true;
+                req.Headers["Accept-Language"] = "ru,en;q=0.8";
+                using (var resp = req.GetResponse())
+                using (var s = resp.GetResponseStream())
+                using (var ms = new MemoryStream())
+                {
+                    var buf = new byte[65536]; int n;
+                    while ((n = s.Read(buf, 0, buf.Length)) > 0 && ms.Length < max) ms.Write(buf, 0, n);
+                    return Encoding.UTF8.GetString(ms.ToArray());
+                }
+            }
+            catch { return null; }
+        }
 
         static HttpWebRequest Request(string url, int timeout)
         {
@@ -85,11 +155,10 @@ namespace ZapretGui
         }
 
         // Проверяет все адреса параллельно; для каждого — время ответа в мс или -1.
-        public static long[] RunTimed(int timeout)
+        public static long[] RunTimed(int timeout) { return RunTimed(timeout, AllUrls()); }
+
+        static long[] RunTimed(int timeout, string[] urls)
         {
-            var urls = new string[Max];
-            YouTube.CopyTo(urls, 0);
-            Discord.CopyTo(urls, YouTube.Length);
             var ms = new long[urls.Length];
             for (int i = 0; i < ms.Length; i++) ms[i] = -1;
             var threads = new Thread[urls.Length];
@@ -106,6 +175,60 @@ namespace ZapretGui
                 if (left > 0) t.Join(left);
             }
             return ms;
+        }
+
+        // Проверка с перепроверкой: адрес, который не ответил, проверяется ещё раз — одиночный тайм-аут не считается сбоем.
+        // fails: «i.ytimg.com~» — ответил со второй попытки, «discord.com!» — не ответил и со второй.
+        public static long[] RunChecked(int timeout, out string fails)
+        {
+            RefreshVideoNodeSoon();
+            string[] urls = AllUrls();
+            long[] ms = RunTimed(timeout, urls);
+            var bad = new System.Collections.Generic.List<int>();
+            for (int i = 0; i < ms.Length; i++) if (ms[i] < 0) bad.Add(i);
+            var sb = new StringBuilder();
+            if (bad.Count > 0 && bad.Count < ms.Length)   // не открылось ничего — перепроверять нечего, это не одиночный сбой
+            {
+                Thread.Sleep(1000);
+                string[] again = bad.Select(i => urls[i]).ToArray();
+                long[] ms2 = RunTimed(timeout, again);
+                for (int k = 0; k < bad.Count; k++)
+                {
+                    if (ms2[k] >= 0) ms[bad[k]] = ms2[k];
+                    if (sb.Length > 0) sb.Append(',');
+                    sb.Append(HostOf(urls[bad[k]])).Append(ms2[k] >= 0 ? "~" : "!");
+                }
+            }
+            else
+                foreach (int i in bad) { if (sb.Length > 0) sb.Append(','); sb.Append(HostOf(urls[i])).Append('!'); }
+            fails = sb.ToString();
+            return ms;
+        }
+
+        static string HostOf(string url) { try { return new Uri(url).Host; } catch { return url; } }
+
+        static string[] AllUrls()
+        {
+            var urls = new string[Max];
+            YouTube.CopyTo(urls, 0);
+            Discord.CopyTo(urls, YouTube.Length);
+            return urls;
+        }
+
+        // Скорость для подбора: середина из трёх картинок; неудачные пробуются ещё раз. 0 — замер не удался.
+        public static double SpeedSample(Func<bool> cancelled)
+        {
+            var v = new System.Collections.Generic.List<double>();
+            foreach (string u in SpeedUrls)
+            {
+                if (cancelled != null && cancelled()) return 0;
+                double s = SpeedKBps(u, 8000);
+                if (s <= 0) s = SpeedKBps(u, 8000);
+                if (s > 0) v.Add(s);
+            }
+            if (v.Count < 2) return 0;
+            v.Sort();
+            return v.Count == 3 ? v[1] : (v[0] + v[1]) / 2;
         }
 
         // Возвращает число доступных адресов: [YouTube, Discord].
@@ -135,7 +258,7 @@ namespace ZapretGui
                 r.Rounds++;
                 if (round == 0 && ok == 0) break; // ничего не открылось — дальше не тратим время
             }
-            if (r.YtOk + r.DcOk > 0 && !cancelled()) r.SpeedKBps = SpeedKBps(SpeedUrl, 8000);
+            if (r.YtOk + r.DcOk > 0 && !cancelled()) r.SpeedKBps = SpeedSample(cancelled);
         }
     }
 

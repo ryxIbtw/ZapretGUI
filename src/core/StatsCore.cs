@@ -18,6 +18,7 @@ namespace ZapretGui
         public int YtMs = -1, DcMs = -1;   // среднее время ответа открывшихся адресов, -1 — ни один не открылся
         public bool Net = true;    // интернет вообще был (если не открылось ничего, проверяется обычный сайт)
         public string Extra = "";  // свои сервисы: «Twitch=120,Example=-1» (мс или -1)
+        public string Fails = "";  // какие адреса не ответили: «i.ytimg.com~» — со второй попытки ответил, «discord.com!» — нет
 
         // Время ответа своего сервиса в этой записи: мс, -1 — не открылся, null — его тогда не проверяли.
         public long? ServiceMs(string name)
@@ -180,12 +181,12 @@ namespace ZapretGui
         public static void ExportCsv(List<StatRec> recs, string path)
         {
             var sb = new StringBuilder();
-            sb.Append("time;bypass_on;strategy;youtube_ok;youtube_total;discord_ok;discord_total;youtube_ms;discord_ms;internet;own_services\r\n");
+            sb.Append("time;bypass_on;strategy;youtube_ok;youtube_total;discord_ok;discord_total;youtube_ms;discord_ms;internet;own_services;failed_hosts\r\n");
             foreach (var r in recs)
                 sb.Append(r.T.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)).Append(';').Append(r.On ? 1 : 0).Append(';')
                   .Append((r.Strategy ?? "").Replace(";", ",")).Append(';').Append(r.Yt).Append(';').Append(r.YtMax).Append(';')
                   .Append(r.Dc).Append(';').Append(r.DcMax).Append(';').Append(r.YtMs).Append(';').Append(r.DcMs).Append(';').Append(r.Net ? 1 : 0)
-                  .Append(';').Append((r.Extra ?? "").Replace(";", " ")).Append("\r\n");
+                  .Append(';').Append((r.Extra ?? "").Replace(";", " ")).Append(';').Append(r.Fails ?? "").Append("\r\n");
             File.WriteAllText(path, sb.ToString(), new UTF8Encoding(true));
         }
         public const int MaxGapSec = 150;     // проверка раз в минуту; дольше — значит, программа не работала
@@ -205,7 +206,7 @@ namespace ZapretGui
             string line = string.Join("\t", new[] {
                 r.T.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture), r.On ? "1" : "0", (r.Strategy ?? "").Replace("\t", " "),
                 r.Yt.ToString(), r.YtMax.ToString(), r.Dc.ToString(), r.DcMax.ToString(), r.YtMs.ToString(), r.DcMs.ToString(), r.Net ? "1" : "0",
-                (r.Extra ?? "").Replace("\t", " ") });
+                (r.Extra ?? "").Replace("\t", " "), (r.Fails ?? "").Replace("\t", " ") });
             lock (sync)
             {
                 try
@@ -244,6 +245,7 @@ namespace ZapretGui
             int.TryParse(p[5], out r.Dc); int.TryParse(p[6], out r.DcMax);
             int.TryParse(p[7], out r.YtMs); int.TryParse(p[8], out r.DcMs);
             if (p.Length > 10) r.Extra = p[10];
+            if (p.Length > 11) r.Fails = p[11];
             return r;
         }
 

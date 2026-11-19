@@ -334,7 +334,8 @@ namespace ZapretGui
             bool wasOk = netYt >= 0.99f && netDc >= 0.99f;
             ThreadPool.QueueUserWorkItem(delegate
             {
-                long[] ms = NetCheck.RunTimed(5000);
+                string fails;
+                long[] ms = NetCheck.RunChecked(5000, out fails);   // одиночный тайм-аут перепроверяется
                 int yt = 0, dc = 0;
                 for (int i = 0; i < ms.Length; i++) if (ms[i] >= 0) { if (i < NetCheck.YouTube.Length) yt++; else dc++; }
                 // ничего не открылось — проверить обычный сайт: может, пропал весь интернет, а не обход
@@ -348,6 +349,7 @@ namespace ZapretGui
                         Yt = yt, YtMax = NetCheck.YouTube.Length, Dc = dc, DcMax = NetCheck.Discord.Length,
                         YtMs = AvgMs(ms, 0, NetCheck.YouTube.Length), DcMs = AvgMs(ms, NetCheck.YouTube.Length, NetCheck.Discord.Length),
                         Extra = ServicesExtra(),   // свои сервисы — тоже в статистику
+                        Fails = fails,
                     });
                     CheckServiceAlerts(net);
                     netChecking = false;
@@ -407,7 +409,9 @@ namespace ZapretGui
                 for (int i = 0; i < urls.Length; i++)
                 {
                     long ms = lastNetMs[offset + i];
-                    sb.Append(ms >= 0 ? "   ✓  " : "   ✗  ").Append(new Uri(urls[i]).Host).Append("  —  ")
+                    string host = new Uri(urls[i]).Host;
+                    if (host.StartsWith("rr") && host.Contains("---sn-")) host = L.T("сервер видео ", "video server ") + host;
+                    sb.Append(ms >= 0 ? "   ✓  " : "   ✗  ").Append(host).Append("  —  ")
                       .Append(ms >= 0 ? ms + L.T(" мс", " ms") : L.T("не открылся", "failed")).Append("\n");
                 }
             };
