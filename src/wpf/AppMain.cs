@@ -116,6 +116,27 @@ namespace ZapretGui
             foreach (string c in new[] { arg, exeDir, Prefs.Get("Root", null) })
                 if (Zapret.IsValidRoot(c)) { Prefs.Set("Root", Path.GetFullPath(c)); return Path.GetFullPath(c); }
 
+            // папка не записана в настройках (например, их стёр чистильщик реестра), но zapret уже лежит в обычном месте —
+            // взять его без скачивания и предложить перенести программу туда же
+            string usual = SelfMove.FindUsualRoot(SelfMove.UsualRoots);
+            if (usual != null)
+            {
+                Prefs.Set("Root", usual);
+                Journal.Add(L.T("Найдена папка zapret: ", "Found the zapret folder: ") + usual);
+                var mv = AskW.Show(null, L.T("Найдена папка zapret: " + usual + "\n\nПеренести программу туда?\n\n«Да» — перенести (программа запустится уже из этой папки), «Нет» — работать с того места, где программа лежит сейчас.",
+                        "Found the zapret folder: " + usual + "\n\nMove the app there?\n\n“Yes” — move (the app restarts from that folder), “No” — keep working from where the app is now."),
+                    "Zapret", MessageBoxButton.YesNo, MessageBoxImage.Question);
+                if (mv == MessageBoxResult.Yes)
+                {
+                    string errMove;
+                    if (SelfMove.MoveTo(usual, out errMove)) { relaunched = true; return null; }
+                    if (errMove != null)
+                        AskW.Show(null, L.T("Перенести программу не удалось: ", "Could not move the app: ") + errMove +
+                            L.T("\n\nПрограмма продолжит работать с того места, где лежит сейчас.", "\n\nThe app keeps working from where it is now."), "Zapret", MessageBoxButton.OK, MessageBoxImage.Warning);
+                }
+                return usual;
+            }
+
             // папки нет — предложить скачать zapret и переехать туда (Да) или указать папку самому (Нет)
             string target = @"C:\zapret";
             if (Directory.Exists(target) && Directory.EnumerateFileSystemEntries(target).Any() && !Zapret.IsValidRoot(target))
@@ -180,6 +201,17 @@ namespace ZapretGui
     // Переезд программы в папку zapret при первом запуске (например, из «Загрузок»).
     static class SelfMove
     {
+        // Обычные места, куда кладут zapret (и куда его скачивает сама программа).
+        public static readonly string[] UsualRoots = { @"C:\zapret", @"C:\zapret-discord-youtube" };
+
+        // Первая папка из списка, где уже лежит рабочий zapret (service.bat и bin), или null.
+        public static string FindUsualRoot(string[] dirs)
+        {
+            foreach (string d in dirs)
+                if (Zapret.IsValidRoot(d)) return Path.GetFullPath(d);
+            return null;
+        }
+
         // Копирует себя в dir и запускает копию; старая копия будет удалена новой, когда эта закроется.
         // true — новая копия запущена (этой нужно закрыться); false — переезд не нужен (err == null) или не удался (err — причина).
         public static bool MoveTo(string dir, out string err)

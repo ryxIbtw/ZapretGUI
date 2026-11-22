@@ -188,6 +188,12 @@ $notExe = [string](Join-Path $tmp 'notes.txt'); 'x' | Set-Content $notExe
 $asm.GetType('ZapretGui.SelfMove').GetMethod('RemoveOldCopy', $BF).Invoke($null, @($notExe))
 Check 'не-exe файл не трогается' (Test-Path $notExe)
 
+$usualEmpty = Join-Path $tmp 'usual-empty'; New-Item -ItemType Directory -Force $usualEmpty | Out-Null
+$usualOk = Join-Path $tmp 'usual-ok'; New-Item -ItemType Directory -Force (Join-Path $usualOk 'bin') | Out-Null; 'x' | Set-Content (Join-Path $usualOk 'service.bat')
+$FU = $asm.GetType('ZapretGui.SelfMove').GetMethod('FindUsualRoot', $BF)
+Check 'готовая папка zapret находится без скачивания' ($FU.Invoke($null, [object[]]@(,[string[]]@($usualEmpty, $usualOk))) -eq $usualOk)
+Check 'пустая папка не считается zapret' ($FU.Invoke($null, [object[]]@(,[string[]]@($usualEmpty))) -eq $null)
+
 # ---------- DNS (только чтение) ----------
 $dns = (T 'Diag').GetMethod('DnsCheck', $BF).Invoke($null, @())
 Check "проверка DNS отвечает: $($dns.Title)" ($dns -ne $null -and $dns.Title -ne '')
