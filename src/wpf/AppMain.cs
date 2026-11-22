@@ -15,8 +15,8 @@ using WF = System.Windows.Forms;
 [assembly: AssemblyCompany("ryxIbtw")]
 [assembly: AssemblyCopyright("© ryxIbtw")]
 [assembly: AssemblyDescription("Интерфейс для zapret-discord-youtube by Flowseal. GUI by ryxIbtw")]
-[assembly: AssemblyVersion("2.6.0.0")]
-[assembly: AssemblyFileVersion("2.6.0.0")]
+[assembly: AssemblyVersion("2.7.0.0")]
+[assembly: AssemblyFileVersion("2.7.0.0")]
 
 namespace ZapretGui
 {
@@ -116,39 +116,46 @@ namespace ZapretGui
             foreach (string c in new[] { arg, exeDir, Prefs.Get("Root", null) })
                 if (Zapret.IsValidRoot(c)) { Prefs.Set("Root", Path.GetFullPath(c)); return Path.GetFullPath(c); }
 
-            // папка не записана в настройках (например, их стёр чистильщик реестра), но zapret уже лежит в обычном месте —
-            // взять его без скачивания и предложить перенести программу туда же
-            string usual = SelfMove.FindUsualRoot(SelfMove.UsualRoots);
-            if (usual != null)
+            // zapret не найден — человек сам выбирает: установить zapret в свою папку или указать, где он уже лежит.
+            // В обоих случаях программа переезжает в папку zapret. "" — вернуться к выбору, null — выйти.
+            while (true)
             {
-                Prefs.Set("Root", usual);
-                Journal.Add(L.T("Найдена папка zapret: ", "Found the zapret folder: ") + usual);
-                var mv = AskW.Show(null, L.T("Найдена папка zapret: " + usual + "\n\nПеренести программу туда?\n\n«Да» — перенести (программа запустится уже из этой папки), «Нет» — работать с того места, где программа лежит сейчас.",
-                        "Found the zapret folder: " + usual + "\n\nMove the app there?\n\n“Yes” — move (the app restarts from that folder), “No” — keep working from where the app is now."),
-                    "Zapret", MessageBoxButton.YesNo, MessageBoxImage.Question);
-                if (mv == MessageBoxResult.Yes)
-                {
-                    string errMove;
-                    if (SelfMove.MoveTo(usual, out errMove)) { relaunched = true; return null; }
-                    if (errMove != null)
-                        AskW.Show(null, L.T("Перенести программу не удалось: ", "Could not move the app: ") + errMove +
-                            L.T("\n\nПрограмма продолжит работать с того места, где лежит сейчас.", "\n\nThe app keeps working from where it is now."), "Zapret", MessageBoxButton.OK, MessageBoxImage.Warning);
-                }
-                return usual;
+                string text = L.T("zapret-discord-youtube не найден.\n\n" +
+                        "«Установить zapret» — выбрать папку: программа скачает туда zapret от Flowseal с GitHub и переедет туда же.\n\n" +
+                        "«У меня уже есть zapret» — указать папку, где лежит service.bat: программа предложит перенести себя туда.",
+                    "zapret-discord-youtube was not found.\n\n" +
+                        "“Install zapret” — pick a folder: the app downloads zapret by Flowseal from GitHub there and moves there too.\n\n" +
+                        "“I already have zapret” — pick the folder with service.bat: the app offers to move there.");
+                int c = AskW.Choose(null, text, "Zapret", MessageBoxImage.Question,
+                    L.T("Отмена", "Cancel"), L.T("У меня уже есть zapret", "I already have zapret"), L.T("Установить zapret", "Install zapret"));
+                string r = c == 2 ? InstallFlow() : c == 1 ? ExistingFlow() : null;
+                if (r != "") return r;
             }
+        }
 
-            // папки нет — предложить скачать zapret и переехать туда (Да) или указать папку самому (Нет)
-            string target = @"C:\zapret";
-            if (Directory.Exists(target) && Directory.EnumerateFileSystemEntries(target).Any() && !Zapret.IsValidRoot(target))
-                target = @"C:\zapret-discord-youtube";
-            var ans = AskW.Show(null, L.T("Не найдена папка zapret-discord-youtube.\n\nСкачать последнюю версию zapret от Flowseal с GitHub в папку " + target + " и перенести программу туда же?\n\n" +
-                    "«Да» — скачать и перенести (программа запустится уже из новой папки), «Нет» — указать папку zapret вручную.",
-                "zapret-discord-youtube folder not found.\n\nDownload the latest zapret by Flowseal from GitHub to " + target + " and move the app there?\n\n" +
-                    "“Yes” — download and move (the app restarts from the new folder), “No” — pick the zapret folder yourself."),
-                "Zapret", MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
-            if (ans == MessageBoxResult.Cancel) return null;
-            if (ans == MessageBoxResult.Yes)
+        // Установка: выбрать папку, подтвердить итоговый путь, скачать zapret, переехать.
+        static string InstallFlow()
+        {
+            while (true)
             {
+                string picked = FolderPicker.Pick(L.T("Куда установить zapret (например, диск C:\\ — тогда будет C:\\zapret)", "Where to install zapret (e.g. drive C:\\ gives C:\\zapret)"));
+                if (picked == null) return "";
+                string problem;
+                string target = SelfMove.InstallTarget(picked, out problem);
+                if (target == null) { AskW.Show(null, problem, "Zapret", MessageBoxButton.OK, MessageBoxImage.Warning); continue; }
+                if (Zapret.IsValidRoot(target))
+                {
+                    AskW.Show(null, L.T("Здесь уже есть zapret: ", "zapret is already here: ") + target + L.T("\n\nПрограмма будет работать с ним и переедет туда.", "\n\nThe app will use it and move there."),
+                        "Zapret", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return UseRoot(target);
+                }
+                string warn = SelfMove.PathWarning(target);
+                var a = AskW.Show(null, L.T("zapret будет установлен в папку:\n", "zapret will be installed to:\n") + target +
+                        (warn != null ? "\n\n" + warn : "") +
+                        L.T("\n\nПрограмма скачает zapret с GitHub и переедет в эту папку. Продолжить?", "\n\nThe app downloads zapret from GitHub and moves to this folder. Continue?"),
+                    "Zapret", MessageBoxButton.YesNo, warn != null ? MessageBoxImage.Warning : MessageBoxImage.Question);
+                if (a != MessageBoxResult.Yes) continue;
+
                 Exception err = null;
                 var wait = new Window { Title = "Zapret", Width = 360, Height = 120, WindowStartupLocation = WindowStartupLocation.CenterScreen, ResizeMode = ResizeMode.NoResize,
                     Background = W.Bg, Content = new System.Windows.Controls.TextBlock { Text = L.T("Скачиваю zapret…", "Downloading zapret…"), Foreground = W.Text, FontSize = 14,
@@ -157,7 +164,7 @@ namespace ZapretGui
                 {
                     try
                     {
-                        // сначала закрыть папку от записи без прав администратора, потом класть в неё файлы
+                        // папка новая или пустая (так выбирает InstallTarget): сначала закрыть её от записи без прав администратора, потом класть файлы
                         Directory.CreateDirectory(target);
                         try { FolderAcl.Harden(target); }
                         catch (Exception ex) { Journal.Add(L.T("Не удалось защитить права на папку ", "Could not protect permissions of ") + target + ": " + ex.Message); }
@@ -171,25 +178,48 @@ namespace ZapretGui
                 if (err == null && Zapret.IsValidRoot(target))
                 {
                     Journal.Add(L.T("zapret скачан в ", "zapret downloaded to ") + target);
-                    Prefs.Set("Root", target);
-                    // перенести себя в папку zapret и запуститься оттуда; не вышло — работаем с того места, где есть
-                    string err2;
-                    if (SelfMove.MoveTo(target, out err2)) { relaunched = true; return null; }
-                    if (err2 != null)
-                        AskW.Show(null, L.T("zapret скачан, но перенести программу не удалось: ", "zapret is downloaded, but the app could not be moved: ") + err2 +
-                            L.T("\n\nПрограмма продолжит работать с того места, где лежит сейчас.", "\n\nThe app keeps working from where it is now."), "Zapret", MessageBoxButton.OK, MessageBoxImage.Warning);
-                    return target;
+                    return UseRoot(target);
                 }
                 AskW.Show(null, L.T("Не удалось скачать zapret: ", "Could not download zapret: ") + (err != null ? err.Message : "?") +
-                    L.T("\n\nУкажите папку вручную.", "\n\nPick the folder yourself."), "Zapret", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    L.T("\n\nПроверьте интернет и попробуйте ещё раз или укажите готовую папку zapret.", "\n\nCheck your connection and try again, or pick an existing zapret folder."),
+                    "Zapret", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return "";
             }
+        }
+
+        // zapret уже есть: выбрать его папку и переехать туда.
+        static string ExistingFlow()
+        {
             while (true)
             {
                 string picked = FolderPicker.Pick(L.T("Папка zapret-discord-youtube (где лежит service.bat)", "zapret-discord-youtube folder (with service.bat)"));
-                if (picked == null) return null;
-                if (Zapret.IsValidRoot(picked)) { Prefs.Set("Root", picked); return picked; }
+                if (picked == null) return "";
+                string root = Zapret.IsValidRoot(picked) ? Path.GetFullPath(picked)
+                            : Zapret.IsValidRoot(Path.Combine(picked, "zapret")) ? Path.GetFullPath(Path.Combine(picked, "zapret")) : null;
+                if (root != null)
+                {
+                    var a = AskW.Show(null, L.T("Папка zapret: ", "zapret folder: ") + root +
+                            L.T("\n\nПеренести программу в эту папку?\n\n«Да» — перенести (программа запустится уже оттуда), «Нет» — выбрать другую папку.",
+                                "\n\nMove the app to this folder?\n\n“Yes” — move (the app restarts from there), “No” — pick another folder."),
+                        "Zapret", MessageBoxButton.YesNo, MessageBoxImage.Question);
+                    if (a == MessageBoxResult.Yes) return UseRoot(root);
+                    continue;
+                }
                 AskW.Show(null, L.T("В этой папке нет service.bat и папки bin.", "This folder has no service.bat and bin folder."), "Zapret", MessageBoxButton.OK, MessageBoxImage.Warning);
             }
+        }
+
+        // Запомнить папку zapret и перенести программу туда; не вышло — работать с того места, где программа лежит сейчас.
+        static string UseRoot(string root)
+        {
+            Prefs.Set("Root", root);
+            Journal.Add(L.T("Папка zapret: ", "zapret folder: ") + root);
+            string err;
+            if (SelfMove.MoveTo(root, out err)) { relaunched = true; return null; }
+            if (err != null)
+                AskW.Show(null, L.T("Перенести программу в папку zapret не удалось: ", "Could not move the app to the zapret folder: ") + err +
+                    L.T("\n\nПрограмма продолжит работать с того места, где лежит сейчас.", "\n\nThe app keeps working from where it is now."), "Zapret", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return root;
         }
 
         static bool relaunched;
@@ -201,14 +231,37 @@ namespace ZapretGui
     // Переезд программы в папку zapret при первом запуске (например, из «Загрузок»).
     static class SelfMove
     {
-        // Обычные места, куда кладут zapret (и куда его скачивает сама программа).
-        public static readonly string[] UsualRoots = { @"C:\zapret", @"C:\zapret-discord-youtube" };
-
-        // Первая папка из списка, где уже лежит рабочий zapret (service.bat и bin), или null.
-        public static string FindUsualRoot(string[] dirs)
+        // Куда ставить zapret, если человек выбрал папку picked:
+        // там уже zapret — она; папки нет или пустая — она; в ней чужие файлы — вложенная «zapret», чтобы не смешивать.
+        // null и problem — если и вложенная «zapret» занята чем-то другим.
+        public static string InstallTarget(string picked, out string problem)
         {
-            foreach (string d in dirs)
-                if (Zapret.IsValidRoot(d)) return Path.GetFullPath(d);
+            problem = null;
+            string p = Path.GetFullPath(picked);
+            if (Zapret.IsValidRoot(p) || IsEmptyOrMissing(p)) return p;
+            string sub = Path.Combine(p, "zapret");
+            if (Zapret.IsValidRoot(sub) || IsEmptyOrMissing(sub)) return sub;
+            problem = L.T("В папке " + p + " уже есть папка zapret с другими файлами.\n\nВыберите другую папку.",
+                          "The folder " + p + " already has a zapret folder with other files.\n\nPick another folder.");
+            return null;
+        }
+
+        static bool IsEmptyOrMissing(string dir)
+        {
+            try { return !Directory.Exists(dir) || !Directory.EnumerateFileSystemEntries(dir).Any(); }
+            catch { return false; }
+        }
+
+        // Предупреждение о пути, где zapret может не работать, или null.
+        public static string PathWarning(string dir)
+        {
+            if (System.Text.RegularExpressions.Regex.IsMatch(dir, "[а-яА-ЯёЁ]"))
+                return L.T("В пути есть русские буквы — zapret в такой папке может не работать. Лучше выбрать, например, C:\\.",
+                           "The path has Cyrillic letters — zapret may not work there. Better pick, e.g., C:\\.");
+            string od = Environment.GetEnvironmentVariable("OneDrive");
+            if (!string.IsNullOrEmpty(od) && (dir + "\\").StartsWith(od.TrimEnd('\\') + "\\", StringComparison.OrdinalIgnoreCase))
+                return L.T("Это папка OneDrive — zapret в ней не работает. Лучше выбрать, например, C:\\.",
+                           "This is a OneDrive folder — zapret doesn't work there. Better pick, e.g., C:\\.");
             return null;
         }
 

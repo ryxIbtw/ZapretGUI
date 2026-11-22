@@ -66,12 +66,36 @@ namespace ZapretGui
     // Вопросы и предупреждения в стиле программы. Те же кнопки и ответы, что у MessageBox.
     static class AskW
     {
+        // Окно со своими подписями кнопок. Возвращает номер нажатой кнопки (последняя — главная, справа) или -1, если окно закрыли.
+        public static int Choose(Window owner, string text, string title, MessageBoxImage icon, params string[] labels)
+        {
+            var defs = new List<Tuple<string, MessageBoxResult>>();
+            for (int i = 0; i < labels.Length; i++) defs.Add(Tuple.Create(labels[i], (MessageBoxResult)(1000 + i)));
+            var r = Build(owner, text, title, icon, defs, MessageBoxResult.None, 520);   // шире: подписи кнопок длиннее «Да/Нет»
+            return (int)r >= 1000 ? (int)r - 1000 : -1;
+        }
+
         public static MessageBoxResult Show(Window owner, string text, string title, MessageBoxButton buttons, MessageBoxImage icon = MessageBoxImage.None)
         {
-            var w = new WinBase(title, owner);
             MessageBoxResult result = buttons == MessageBoxButton.YesNo ? MessageBoxResult.No : buttons == MessageBoxButton.OK ? MessageBoxResult.OK : MessageBoxResult.Cancel;
+            var defs = new List<Tuple<string, MessageBoxResult>>();
+            switch (buttons)
+            {
+                case MessageBoxButton.YesNo: defs.Add(Tuple.Create(L.T("Нет", "No"), MessageBoxResult.No)); defs.Add(Tuple.Create(L.T("Да", "Yes"), MessageBoxResult.Yes)); break;
+                case MessageBoxButton.YesNoCancel:
+                    defs.Add(Tuple.Create(L.T("Отмена", "Cancel"), MessageBoxResult.Cancel)); defs.Add(Tuple.Create(L.T("Нет", "No"), MessageBoxResult.No));
+                    defs.Add(Tuple.Create(L.T("Да", "Yes"), MessageBoxResult.Yes)); break;
+                case MessageBoxButton.OKCancel: defs.Add(Tuple.Create(L.T("Отмена", "Cancel"), MessageBoxResult.Cancel)); defs.Add(Tuple.Create("OK", MessageBoxResult.OK)); break;
+                default: defs.Add(Tuple.Create("OK", MessageBoxResult.OK)); break;
+            }
+            return Build(owner, text, title, icon, defs, result, 420);
+        }
 
-            var grid = new Grid { Width = 420, Margin = new Thickness(24, 24, 24, 20) };
+        static MessageBoxResult Build(Window owner, string text, string title, MessageBoxImage icon, List<Tuple<string, MessageBoxResult>> defs, MessageBoxResult result, double width)
+        {
+            var w = new WinBase(title, owner);
+
+            var grid = new Grid { Width = width, Margin = new Thickness(24, 24, 24, 20) };
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             grid.ColumnDefinitions.Add(new ColumnDefinition());
             grid.RowDefinitions.Add(new RowDefinition());
@@ -88,17 +112,7 @@ namespace ZapretGui
             Grid.SetColumn(tb, 1);
             grid.Children.Add(tb);
 
-            var bar = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 22, 0, 0) };
-            var defs = new List<Tuple<string, MessageBoxResult>>();
-            switch (buttons)
-            {
-                case MessageBoxButton.YesNo: defs.Add(Tuple.Create(L.T("Нет", "No"), MessageBoxResult.No)); defs.Add(Tuple.Create(L.T("Да", "Yes"), MessageBoxResult.Yes)); break;
-                case MessageBoxButton.YesNoCancel:
-                    defs.Add(Tuple.Create(L.T("Отмена", "Cancel"), MessageBoxResult.Cancel)); defs.Add(Tuple.Create(L.T("Нет", "No"), MessageBoxResult.No));
-                    defs.Add(Tuple.Create(L.T("Да", "Yes"), MessageBoxResult.Yes)); break;
-                case MessageBoxButton.OKCancel: defs.Add(Tuple.Create(L.T("Отмена", "Cancel"), MessageBoxResult.Cancel)); defs.Add(Tuple.Create("OK", MessageBoxResult.OK)); break;
-                default: defs.Add(Tuple.Create("OK", MessageBoxResult.OK)); break;
-            }
+            var bar = new WrapPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 22, 0, 0) };
             MessageBoxResult primary = defs[defs.Count - 1].Item2;
             for (int i = 0; i < defs.Count; i++)
             {

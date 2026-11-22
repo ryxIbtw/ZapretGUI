@@ -190,9 +190,18 @@ Check 'не-exe файл не трогается' (Test-Path $notExe)
 
 $usualEmpty = Join-Path $tmp 'usual-empty'; New-Item -ItemType Directory -Force $usualEmpty | Out-Null
 $usualOk = Join-Path $tmp 'usual-ok'; New-Item -ItemType Directory -Force (Join-Path $usualOk 'bin') | Out-Null; 'x' | Set-Content (Join-Path $usualOk 'service.bat')
-$FU = $asm.GetType('ZapretGui.SelfMove').GetMethod('FindUsualRoot', $BF)
-Check 'готовая папка zapret находится без скачивания' ($FU.Invoke($null, [object[]]@(,[string[]]@($usualEmpty, $usualOk))) -eq $usualOk)
-Check 'пустая папка не считается zapret' ($FU.Invoke($null, [object[]]@(,[string[]]@($usualEmpty))) -eq $null)
+$IT = $asm.GetType('ZapretGui.SelfMove').GetMethod('InstallTarget', $BF)
+function Target($dir) { $a2 = [object[]]@([string]$dir, $null); $t = $IT.Invoke($null, $a2); @($t, $a2[1]) }
+Check 'установка в пустую папку — прямо в неё' ((Target $usualEmpty)[0] -eq $usualEmpty)
+Check 'установка в несуществующую папку — в неё' ((Target (Join-Path $tmp 'new-dir'))[0] -eq (Join-Path $tmp 'new-dir'))
+Check 'выбрана готовая папка zapret — она же' ((Target $usualOk)[0] -eq $usualOk)
+$busy = Join-Path $tmp 'busy'; New-Item -ItemType Directory -Force $busy | Out-Null; 'x' | Set-Content (Join-Path $busy 'my.txt')
+Check 'в папке чужие файлы — во вложенную zapret' ((Target $busy)[0] -eq (Join-Path $busy 'zapret'))
+New-Item -ItemType Directory -Force (Join-Path $busy 'zapret') | Out-Null; 'x' | Set-Content (Join-Path $busy 'zapret\other.txt')
+$tb = Target $busy
+Check 'вложенная zapret занята чужим — отказ с объяснением' ($tb[0] -eq $null -and $tb[1] -like '*zapret*')
+$PW = $asm.GetType('ZapretGui.SelfMove').GetMethod('PathWarning', $BF)
+Check 'предупреждение о русских буквах в пути' ($PW.Invoke($null, @('C:\Пользователи\zapret')) -ne $null -and $PW.Invoke($null, @('C:\zapret')) -eq $null)
 
 # ---------- DNS (только чтение) ----------
 $dns = (T 'Diag').GetMethod('DnsCheck', $BF).Invoke($null, @())
